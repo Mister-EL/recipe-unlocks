@@ -71,7 +71,8 @@ public final class UnlockIndex {
     private final List<Entry> entries = new ArrayList<>();
     private final Map<Trigger, List<Counter>> countersByTrigger = new IdentityHashMap<>();
     private final Map<StatType<?>, List<Counter>> countersByStat = new IdentityHashMap<>();
-    private final Set<ResourceKey<Recipe<?>>> unlockable = new HashSet<>();
+    private final Set<ResourceKey<Recipe<?>>> unlockedByAdvancements = new HashSet<>();
+    private final Set<ResourceKey<Recipe<?>>> ruled = new HashSet<>();
     private final List<String> problems = new ArrayList<>();
     private int recipesWithoutUnlock;
 
@@ -82,10 +83,10 @@ public final class UnlockIndex {
         RecipeManager recipes = server.getRecipeManager();
 
         for (AdvancementHolder advancement : server.getAdvancements().getAllAdvancements()) {
-            index.unlockable.addAll(advancement.value().rewards().recipes());
+            index.unlockedByAdvancements.addAll(advancement.value().rewards().recipes());
         }
 
-        if (config.templatesActive() && !config.rules().isEmpty()) {
+        if (config.rulesActive()) {
             Map<Item, Set<RecipeHolder<?>>> byResult = recipesByResult(server);
             Map<String, Counter> counters = new LinkedHashMap<>();
             for (ModConfig.Rule rule : config.rules()) {
@@ -95,7 +96,7 @@ public final class UnlockIndex {
                 }
                 Entry entry = new Entry(rule.output(), rule.expr(), unlocked);
                 index.entries.add(entry);
-                unlocked.forEach(recipe -> index.unlockable.add(recipe.id()));
+                unlocked.forEach(recipe -> index.ruled.add(recipe.id()));
                 rule.expr().forEachCondition(condition -> {
                     Counter counter = counters.computeIfAbsent(condition.counterKey(), key -> index.newCounter(rule.output(), condition));
                     counter.cap = Math.max(counter.cap, condition.count());
@@ -107,7 +108,7 @@ public final class UnlockIndex {
         }
 
         for (RecipeHolder<?> recipe : recipes.getRecipes()) {
-            if (!recipe.value().isSpecial() && !index.unlockable.contains(recipe.id())) {
+            if (!recipe.value().isSpecial() && !index.ruled.contains(recipe.id()) && !index.unlockedByAdvancements.contains(recipe.id())) {
                 index.recipesWithoutUnlock++;
             }
         }
@@ -205,9 +206,14 @@ public final class UnlockIndex {
         return this.countersByStat.getOrDefault(statType, List.of());
     }
 
-    /** True when the game or the config can unlock this recipe for a player. */
-    public boolean unlockable(ResourceKey<Recipe<?>> recipe) {
-        return this.unlockable.contains(recipe);
+    /** True when some advancement of the game gives this recipe. */
+    public boolean unlockedByAdvancements(ResourceKey<Recipe<?>> recipe) {
+        return this.unlockedByAdvancements.contains(recipe);
+    }
+
+    /** True when a config rule unlocks this recipe; then the rule is the only way to get it. */
+    public boolean ruled(ResourceKey<Recipe<?>> recipe) {
+        return this.ruled.contains(recipe);
     }
 
     public List<String> problems() {

@@ -119,13 +119,30 @@ final class Sim {
 
     /** Puts two planks into the player's own 2x2 grid and returns what the result slot shows. */
     static ItemStack sticksFromInventoryGrid(ServerPlayer player) {
+        return inventoryGridResult(player, new ItemStack(Items.OAK_PLANKS), new ItemStack(Items.OAK_PLANKS));
+    }
+
+    /** Puts one item above another into the player's own 2x2 grid and returns what the result slot shows. */
+    static ItemStack inventoryGridResult(ServerPlayer player, ItemStack top, ItemStack bottom) {
         InventoryMenu menu = player.inventoryMenu;
-        menu.getSlot(1).set(new ItemStack(Items.OAK_PLANKS));
-        menu.getSlot(3).set(new ItemStack(Items.OAK_PLANKS));
+        menu.getSlot(1).set(top);
+        menu.getSlot(3).set(bottom);
         ItemStack result = menu.getSlot(InventoryMenu.RESULT_SLOT).getItem().copy();
         menu.getSlot(1).set(ItemStack.EMPTY);
         menu.getSlot(3).set(ItemStack.EMPTY);
         return result;
+    }
+
+    /** Gives the player planks the way picking them up does; in the vanilla game this unlocks the stick recipe. */
+    static void obtainPlanks(ServerPlayer player) {
+        player.getInventory().add(new ItemStack(Items.OAK_PLANKS));
+        player.inventoryMenu.broadcastChanges();
+    }
+
+    /** Runs a command as the server console. */
+    static void console(GameTestHelper helper, String command) {
+        var server = helper.getLevel().getServer();
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), command);
     }
 
     /** Sends the same packet a client sends for a left click on a slot of the open menu. */

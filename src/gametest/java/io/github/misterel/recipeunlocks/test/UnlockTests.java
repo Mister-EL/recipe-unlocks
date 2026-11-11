@@ -156,6 +156,56 @@ final class UnlockTests {
         });
     }
 
+    /** An item with a rule opens by the rule and by nothing else. */
+    static void ruleIsTheOnlyWay(GameTestHelper helper) {
+        Sim.run(helper, () -> {
+            Sim.config(STICK_RULE);
+            ServerPlayer player = Sim.join(helper, GameType.SURVIVAL);
+
+            Sim.obtainPlanks(player);
+            check(helper, !Sim.knows(helper, player, "stick"), "getting planks does not unlock a recipe that has a rule");
+            Sim.unlock(helper, player, "stick");
+            check(helper, !Sim.knows(helper, player, "stick"), "nor does anything else the game does on its own");
+            check(helper, Sim.sticksFromInventoryGrid(player).isEmpty(), "so sticks cannot be crafted");
+
+            Sim.obtainPlanks(player);
+            Sim.unlock(helper, player, "torch");
+            check(helper, Sim.knows(helper, player, "torch"), "recipes without a rule still unlock the vanilla way");
+
+            Sim.breakBlock(helper, player, Blocks.STONE, CELL);
+            Sim.breakBlock(helper, player, Blocks.STONE, CELL);
+            jumpOn(helper, player, Blocks.COBBLESTONE);
+            check(helper, Sim.knows(helper, player, "stick") && Sim.sticksFromInventoryGrid(player).is(Items.STICK), "the rule unlocks it");
+
+            // An operator may still hand the recipe out.
+            ServerPlayer friend = Sim.join(helper, GameType.SURVIVAL);
+            Sim.console(helper, "recipe give " + friend.getGameProfile().name() + " minecraft:stick");
+            check(helper, Sim.knows(helper, friend, "stick"), "/recipe give works for a recipe with a rule");
+            helper.getLevel().removeBlock(helper.absolutePos(CELL), false);
+        });
+    }
+
+    /** lock_all_recipes off, rules on: only the items that have a rule are locked. */
+    static void onlyRuledItemsLockedWithoutLockAll(GameTestHelper helper) {
+        Sim.run(helper, () -> {
+            Sim.config(STICK_RULE.replace("lock_all_recipes = true", "lock_all_recipes = false"));
+            ServerPlayer player = Sim.join(helper, GameType.SURVIVAL);
+            check(helper, Sim.sticksFromInventoryGrid(player).isEmpty(), "the item with a rule is locked");
+            check(helper, Sim.inventoryGridResult(player, new ItemStack(Items.COAL), new ItemStack(Items.STICK)).is(Items.TORCH),
+                    "everything else is crafted freely");
+
+            Sim.breakBlock(helper, player, Blocks.STONE, CELL);
+            Sim.breakBlock(helper, player, Blocks.STONE, CELL);
+            jumpOn(helper, player, Blocks.COBBLESTONE);
+            check(helper, Sim.sticksFromInventoryGrid(player).is(Items.STICK), "and the rule opens the locked item");
+
+            Sim.config(STICK_RULE.replace("lock_all_recipes = true", "lock_all_recipes = false").replace("template_unlocks = true", "template_unlocks = false"));
+            ServerPlayer free = Sim.join(helper, GameType.SURVIVAL);
+            check(helper, Sim.sticksFromInventoryGrid(free).is(Items.STICK), "both switches off: nothing is locked");
+            helper.getLevel().removeBlock(helper.absolutePos(CELL), false);
+        });
+    }
+
     static void creativeIsNotCounted(GameTestHelper helper) {
         Sim.run(helper, () -> {
             Sim.config(STICK_RULE);
@@ -197,10 +247,13 @@ final class UnlockTests {
             check(helper, Sim.knows(helper, player, "torch"), "recipes the mod did not give are left alone");
             check(helper, Sim.progressLine(player, "minecraft:stick").contains("break minecraft:stone 0/2"), "counters start over");
 
-            // After a reset the recipe can be unlocked the vanilla way again: by getting planks.
-            player.getInventory().add(new ItemStack(Items.OAK_PLANKS));
-            player.inventoryMenu.broadcastChanges();
-            check(helper, Sim.knows(helper, player, "stick"), "the vanilla unlock still works after a reset");
+            // While the rule exists, getting planks (the vanilla way to learn sticks) does not help...
+            Sim.obtainPlanks(player);
+            check(helper, !Sim.knows(helper, player, "stick"), "the rule is still the only way after a reset");
+            // ...but once the rule is deleted, the recipe the game wanted to give is handed over.
+            Sim.config("lock_all_recipes = true\n");
+            UnlockManager.index(helper.getLevel().getServer());
+            check(helper, Sim.knows(helper, player, "stick"), "without the rule the vanilla unlock applies again");
             helper.getLevel().removeBlock(helper.absolutePos(CELL), false);
         });
     }
@@ -212,14 +265,18 @@ final class UnlockTests {
             Identifier recipe = Identifier.withDefaultNamespace("stick");
             data.of(id).counters.put("break minecraft:stone", 2);
             data.of(id).awarded.add(recipe);
+            data.of(id).withheld.add(recipe);
 
             Tag saved = ProgressData.CODEC.encodeStart(NbtOps.INSTANCE, data).getOrThrow();
             ProgressData loaded = ProgressData.CODEC.parse(NbtOps.INSTANCE, saved).getOrThrow();
-            data.remove(id);
+            data.of(id).counters.clear();
+            data.of(id).awarded.clear();
+            data.of(id).withheld.clear();
 
             ProgressData.PlayerProgress progress = loaded.peek(id);
             check(helper, progress != null && progress.counters.getInt("break minecraft:stone") == 2, "counters survive saving and loading");
-            check(helper, progress != null && progress.awarded.contains(recipe), "so does the list of recipes the mod gave");
+            check(helper, progress != null && progress.awarded.contains(recipe) && progress.withheld.contains(recipe),
+                    "so do the lists of recipes the mod gave and held back");
         });
     }
 

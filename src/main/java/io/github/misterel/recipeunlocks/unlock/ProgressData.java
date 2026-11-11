@@ -22,19 +22,23 @@ public final class ProgressData extends SavedData {
     public static final class PlayerProgress {
         private static final Codec<PlayerProgress> CODEC = RecordCodecBuilder.create(i -> i.group(
                         Codec.unboundedMap(Codec.STRING, Codec.INT).optionalFieldOf("counters", Map.of()).forGetter(p -> p.counters),
-                        Identifier.CODEC.listOf().optionalFieldOf("awarded", List.of()).forGetter(p -> List.copyOf(p.awarded)))
+                        Identifier.CODEC.listOf().optionalFieldOf("awarded", List.of()).forGetter(p -> List.copyOf(p.awarded)),
+                        Identifier.CODEC.listOf().optionalFieldOf("withheld", List.of()).forGetter(p -> List.copyOf(p.withheld)))
                 .apply(i, PlayerProgress::new));
 
         /** Counter key -> how many times the player did it. */
         public final Object2IntOpenHashMap<String> counters = new Object2IntOpenHashMap<>();
         /** Recipes this mod added to the player's recipe book, so that a reset can take them back. */
         public final Set<Identifier> awarded = new LinkedHashSet<>();
+        /** Recipes the game wanted to give while a rule stood in the way; they are handed over if the rule goes away. */
+        public final Set<Identifier> withheld = new LinkedHashSet<>();
 
         public PlayerProgress() {}
 
-        private PlayerProgress(Map<String, Integer> counters, List<Identifier> awarded) {
+        private PlayerProgress(Map<String, Integer> counters, List<Identifier> awarded, List<Identifier> withheld) {
             this.counters.putAll(counters);
             this.awarded.addAll(awarded);
+            this.withheld.addAll(withheld);
         }
     }
 
@@ -63,13 +67,5 @@ public final class ProgressData extends SavedData {
 
     public @Nullable PlayerProgress peek(UUID player) {
         return this.players.get(player);
-    }
-
-    public @Nullable PlayerProgress remove(UUID player) {
-        PlayerProgress removed = this.players.remove(player);
-        if (removed != null) {
-            this.setDirty();
-        }
-        return removed;
     }
 }

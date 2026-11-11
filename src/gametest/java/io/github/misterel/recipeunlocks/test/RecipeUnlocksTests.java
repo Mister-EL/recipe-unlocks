@@ -40,6 +40,8 @@ public final class RecipeUnlocksTests {
         QUICK.put("campfire_locked", LockTests::campfireLocked);
         QUICK.put("lookups_hidden_from_acting_player", LockTests::lookupsHiddenFromActingPlayer);
         QUICK.put("rule_unlocks_recipe", UnlockTests::ruleUnlocksRecipe);
+        QUICK.put("rule_is_the_only_way", UnlockTests::ruleIsTheOnlyWay);
+        QUICK.put("only_ruled_items_locked_without_lock_all", UnlockTests::onlyRuledItemsLockedWithoutLockAll);
         QUICK.put("every_template_counts", UnlockTests::everyTemplateCounts);
         QUICK.put("creative_is_not_counted", UnlockTests::creativeIsNotCounted);
         QUICK.put("reset_takes_recipes_back", UnlockTests::resetTakesRecipesBack);

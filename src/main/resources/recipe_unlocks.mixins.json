@@ -10,10 +10,12 @@
     "CraftingMenuMixin",
     "ItemCombinerMenuAccessor",
     "RecipeCacheMixin",
+    "RecipeCommandMixin",
     "RecipeCraftingHolderMixin",
     "RecipeManagerMixin",
     "RecipeMapMixin",
     "ServerGamePacketListenerImplMixin",
+    "ServerRecipeBookMixin",
     "SlotMixin",
     "SmithingMenuMixin",
     "StonecutterMenuMixin"

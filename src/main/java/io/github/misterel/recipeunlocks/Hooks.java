@@ -57,7 +57,7 @@ public final class Hooks {
 
     /** The player may not take the furnace output while it was made with a recipe they have not unlocked. */
     public static boolean furnaceOutputLocked(Player player, AbstractFurnaceBlockEntity furnace) {
-        if (!(player instanceof ServerPlayer serverPlayer) || !UnlockManager.config().lockAll()) {
+        if (!(player instanceof ServerPlayer serverPlayer) || !UnlockManager.config().active()) {
             return false;
         }
         MinecraftServer server = serverPlayer.level().getServer();
@@ -79,7 +79,7 @@ public final class Hooks {
 
     /** True when {@code stack} can be cooked, but only with recipes the player has not unlocked. */
     public static <T extends Recipe<SingleRecipeInput>> boolean cookingLocked(@Nullable Object cook, RecipeType<T> type, ItemStack stack) {
-        if (!(cook instanceof ServerPlayer player) || stack.isEmpty() || !UnlockManager.config().lockAll()) {
+        if (!(cook instanceof ServerPlayer player) || stack.isEmpty() || !UnlockManager.config().active()) {
             return false;
         }
         ServerLevel level = player.level();
@@ -107,7 +107,7 @@ public final class Hooks {
     /** The crafter only crafts what its owner, who has to be online, has unlocked. */
     public static Optional<RecipeHolder<CraftingRecipe>> filterCrafter(Optional<RecipeHolder<CraftingRecipe>> found, ServerLevel level, BlockPos pos) {
         ModConfig config = UnlockManager.config();
-        if (found.isEmpty() || !config.lockAll() || !config.lockCrafter() || !UnlockManager.isLockable(level.getServer(), found.get())) {
+        if (found.isEmpty() || !config.active() || !config.lockCrafter() || !UnlockManager.isLockable(level.getServer(), found.get())) {
             return found;
         }
         BlockEntity blockEntity = level.getBlockEntity(pos);

@@ -39,8 +39,8 @@ public final class UnlocksCommand {
         int rules = UnlockManager.index(source.getServer()).entries().size();
         List<String> problems = new ArrayList<>(result.problems());
         ModConfig config = UnlockManager.config();
-        if (!config.templatesActive() && !config.rules().isEmpty()) {
-            problems.add("правила из [unlocks] (" + config.rules().size() + ") сейчас выключены: нужны lock_all_recipes = true и template_unlocks = true");
+        if (!config.templates() && !config.rules().isEmpty()) {
+            problems.add("правила из [unlocks] (" + config.rules().size() + ") сейчас выключены: нужен template_unlocks = true");
         }
         source.sendSuccess(() -> Component.literal("Recipe Unlocks: конфиг применён, правил: " + rules + ", замечаний: " + problems.size()), true);
         say(source, problems);
@@ -53,7 +53,7 @@ public final class UnlocksCommand {
         List<String> lines = UnlockManager.describeProgress(player);
         if (lines.isEmpty()) {
             ModConfig config = UnlockManager.config();
-            String why = config.rules().isEmpty() || config.templatesActive() ? "действующих правил нет" : "правила из [unlocks] выключены настройками";
+            String why = config.rules().isEmpty() || config.templates() ? "действующих правил нет" : "правила из [unlocks] выключены настройками";
             source.sendSuccess(() -> Component.literal("Recipe Unlocks: " + why), false);
         } else {
             source.sendSuccess(() -> Component.literal("Recipe Unlocks, " + player.getGameProfile().name() + ":"), false);
