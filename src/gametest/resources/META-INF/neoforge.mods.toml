@@ -1,0 +1,13 @@
+license="All Rights Reserved"
+
+[[mods]]
+modId="recipe_unlocks_test"
+version="0.0.0"
+displayName="Recipe Unlocks game tests"
+
+[[dependencies.recipe_unlocks_test]]
+    modId="recipe_unlocks"
+    type="required"
+    versionRange="[0,)"
+    ordering="AFTER"
+    side="BOTH"
