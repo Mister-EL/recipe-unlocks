@@ -1,6 +1,7 @@
 package io.github.misterel.recipeunlocks.mixin;
 
 import io.github.misterel.recipeunlocks.Hooks;
+import io.github.misterel.recipeunlocks.PlayerContext;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.FurnaceResultSlot;
@@ -37,9 +38,9 @@ public abstract class SlotMixin {
 
     @Inject(method = "mayPlace", at = @At("HEAD"), cancellable = true)
     private void recipeUnlocks$furnaceInput(ItemStack stack, CallbackInfoReturnable<Boolean> cir) {
-        if (this.container instanceof AbstractFurnaceBlockEntity furnace
+        if (this.container instanceof AbstractFurnaceBlockEntity
                 && this.getContainerSlot() == FURNACE_INPUT_SLOT
-                && Hooks.furnaceInputLocked(furnace, stack)) {
+                && Hooks.furnaceInputLocked(PlayerContext.get(), this.container, stack)) {
             cir.setReturnValue(false);
         }
     }

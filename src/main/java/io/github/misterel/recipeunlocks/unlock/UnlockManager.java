@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.ToIntFunction;
 import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.triggers.CriteriaTriggers;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -70,7 +71,10 @@ public final class UnlockManager {
             return new LoadResult(false, List.of(e.getMessage()));
         }
         List<String> problems = new ArrayList<>(config.problems());
-        problems.addAll(index(server).problems());
+        if (!serverStart) {
+            // On server start the world is not loaded yet; the rules are checked when it is.
+            problems.addAll(index(server).problems());
+        }
         return new LoadResult(true, problems);
     }
 
@@ -215,9 +219,9 @@ public final class UnlockManager {
     }
 
     /**
-     * Clears the player's counters and takes back the recipes this mod gave. The advancements that
-     * reward those recipes are revoked too: giving a recipe completes them, and a completed
-     * advancement would never unlock the recipe the vanilla way again.
+     * Clears the player's counters and takes back the recipes this mod gave. Giving a recipe also
+     * ticks the "has the recipe" criterion of its vanilla advancement; that is undone too, or the
+     * completed advancement would never unlock the recipe the vanilla way again.
      *
      * @return how many recipes were taken back
      */
@@ -237,11 +241,17 @@ public final class UnlockManager {
         player.resetRecipes(revoke);
         for (AdvancementHolder advancement : server.getAdvancements().getAllAdvancements()) {
             if (advancement.value().rewards().recipes().stream().anyMatch(keys::contains)) {
-                List<String> completed = new ArrayList<>();
-                player.getAdvancements().getOrStartProgress(advancement).getCompletedCriteria().forEach(completed::add);
-                completed.forEach(criterion -> player.getAdvancements().revoke(advancement, criterion));
+                // Only the "has the recipe" criteria: those are what giving the recipe had ticked off.
+                advancement.value().criteria().forEach((name, criterion) -> {
+                    if (criterion.trigger() == CriteriaTriggers.RECIPE_UNLOCKED) {
+                        player.getAdvancements().revoke(advancement, name);
+                    }
+                });
             }
         }
+        // A result that is already on screen would otherwise be taken and bring the recipe back.
+        player.closeContainer();
+        player.inventoryMenu.slotsChanged(player.inventoryMenu.getCraftSlots());
         return revoke.size();
     }
 

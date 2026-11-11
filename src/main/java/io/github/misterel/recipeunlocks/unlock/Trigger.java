@@ -88,9 +88,18 @@ public final class Trigger {
         return this.statType;
     }
 
-    /** Human-readable name of the registry the target is looked up in. */
+    /** Where the target is looked up, worded for the "not found among ..." message. */
     public String targetKind() {
-        return this.registry.key().identifier().getPath();
+        if (this.registry == BuiltInRegistries.BLOCK) {
+            return "блоков и предметов";
+        } else if (this.registry == BuiltInRegistries.ITEM) {
+            return "предметов";
+        } else if (this.registry == BuiltInRegistries.ENTITY_TYPE) {
+            return "существ";
+        } else if (this.registry == BuiltInRegistries.CUSTOM_STAT) {
+            return "счётчиков статистики";
+        }
+        return this.registry.key().identifier().toString();
     }
 
     public boolean targetExists(Target target) {

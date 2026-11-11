@@ -10,6 +10,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
@@ -69,11 +70,11 @@ public final class Hooks {
         return false;
     }
 
-    /** The acting player may not put {@code stack} into the furnace: every recipe for it is locked. */
-    public static boolean furnaceInputLocked(AbstractFurnaceBlockEntity furnace, ItemStack stack) {
-        ServerPlayer player = PlayerContext.get();
+    /** The player may not put {@code stack} into the furnace: every recipe for it is locked. */
+    public static boolean furnaceInputLocked(@Nullable Player player, Container container, ItemStack stack) {
         return player != null
-                && cookingLocked(player, ((AbstractFurnaceBlockEntityAccessor) furnace).recipeUnlocks$recipeType(), stack);
+                && container instanceof AbstractFurnaceBlockEntityAccessor furnace
+                && cookingLocked(player, furnace.recipeUnlocks$recipeType(), stack);
     }
 
     /** True when {@code stack} can be cooked, but only with recipes the player has not unlocked. */

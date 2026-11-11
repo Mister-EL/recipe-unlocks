@@ -12,6 +12,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.ContainerLevelAccess;
+import net.minecraft.world.inventory.RecipeBookMenu;
 import net.minecraft.world.inventory.SmithingMenu;
 import net.minecraft.world.inventory.StonecutterMenu;
 import net.minecraft.world.item.ItemStack;
@@ -25,6 +26,7 @@ import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CrafterBlock;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.level.block.entity.CampfireBlockEntity;
 import net.minecraft.world.level.block.entity.CrafterBlockEntity;
@@ -134,6 +136,20 @@ final class LockTests {
                     "the result of a locked recipe cannot be taken");
             check(helper, !Sim.knows(helper, other, smelting), "and the recipe stays locked");
 
+            // The recipe book empties the furnace into the inventory before placing a recipe.
+            Sim.unlock(helper, other, "stick");
+            ((RecipeBookMenu) other.containerMenu).handlePlacement(false, false, Sim.recipe(helper, "stick"), level, other.getInventory());
+            check(helper, furnace.getItem(2).getCount() == 2 && !other.getInventory().hasAnyMatching(stack -> stack.is(Items.IRON_INGOT)),
+                    "a recipe book click does not hand the locked result over either");
+
+            // Shift-click tops up a stack that is already in the input slot without asking the slot.
+            furnace.setItem(0, new ItemStack(Items.RAW_IRON));
+            other.getInventory().setItem(9, new ItemStack(Items.RAW_IRON, 5));
+            other.containerMenu.quickMoveStack(other, 3);
+            check(helper, furnace.getItem(0).getCount() == 1, "shift-click does not feed a furnace with ore of a locked recipe");
+            other.getInventory().clearContent();
+            furnace.setItem(0, ItemStack.EMPTY);
+
             Sim.clickSlot(player, 2);
             check(helper, furnace.getItem(2).isEmpty() && player.containerMenu.getCarried().is(Items.IRON_INGOT),
                     "a player who unlocked the recipe takes the result");
@@ -176,6 +192,9 @@ final class LockTests {
                 check(helper, recipes.getRecipeFor(RecipeType.CRAFTING, planks, level, stick.id()).isEmpty(), "or remembers its id");
             });
             check(helper, PlayerContext.get() == null, "the acting player is forgotten afterwards");
+            // The crafter's recipe cache is shared by everybody: it must not remember one player's view.
+            PlayerContext.run(player, () ->
+                    check(helper, CrafterBlock.getPotentialResults(level, planks).isPresent(), "the crafter cache is filled without the player filter"));
 
             Sim.config(LOCK_ONLY + "block_modded_stations = false\n");
             PlayerContext.run(player, () ->

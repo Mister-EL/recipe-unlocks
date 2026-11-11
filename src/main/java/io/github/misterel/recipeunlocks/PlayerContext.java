@@ -1,5 +1,6 @@
 package io.github.misterel.recipeunlocks;
 
+import java.util.function.Supplier;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
 
@@ -24,11 +25,29 @@ public final class PlayerContext {
         try {
             action.run();
         } finally {
-            if (previous == null) {
-                ACTING.remove();
-            } else {
-                ACTING.set(previous);
-            }
+            restore(previous);
+        }
+    }
+
+    /** Runs code whose result is shared between players, so it must not depend on who is acting. */
+    public static <T> T callWithoutPlayer(Supplier<T> action) {
+        ServerPlayer previous = ACTING.get();
+        if (previous == null) {
+            return action.get();
+        }
+        ACTING.remove();
+        try {
+            return action.get();
+        } finally {
+            restore(previous);
+        }
+    }
+
+    private static void restore(@Nullable ServerPlayer previous) {
+        if (previous == null) {
+            ACTING.remove();
+        } else {
+            ACTING.set(previous);
         }
     }
 }

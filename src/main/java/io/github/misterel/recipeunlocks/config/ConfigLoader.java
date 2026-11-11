@@ -1,25 +1,29 @@
 package io.github.misterel.recipeunlocks.config;
 
-import com.electronwill.nightconfig.core.CommentedConfig;
-import com.electronwill.nightconfig.core.Config;
-import com.electronwill.nightconfig.core.io.ParsingMode;
-import com.electronwill.nightconfig.toml.TomlFormat;
-import com.electronwill.nightconfig.toml.TomlParser;
-import io.github.misterel.recipeunlocks.unlock.Expr;
 import io.github.misterel.recipeunlocks.unlock.ExprParser;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.StringReader;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
-/** Reads {@code config/recipe-unlocks.toml}. */
+/**
+ * Reads {@code config/recipe-unlocks.toml}.
+ *
+ * <p>The file is a small subset of TOML: {@code setting = true} lines, then {@code [unlocks]}
+ * and one rule per line. It is read line by line instead of with a TOML library so that a
+ * mistake costs one line, not the whole file, and is reported with its line number. Quotes
+ * around rule names and rules are optional.
+ */
 public final class ConfigLoader {
     public static final String FILE_NAME = "recipe-unlocks.toml";
     private static final String DEFAULT_RESOURCE = "/recipe-unlocks-default.toml";
@@ -30,17 +34,23 @@ public final class ConfigLoader {
     private static final String LOCK_CRAFTER = "lock_crafter";
     private static final String BLOCK_MODDED = "block_modded_stations";
     private static final String UNLOCKS = "unlocks";
-    private static final Set<String> KNOWN_KEYS = Set.of(LOCK_ALL, TEMPLATES, LOCK_WITHOUT_UNLOCK, LOCK_CRAFTER, BLOCK_MODDED, UNLOCKS);
+    private static final Set<String> SETTINGS = Set.of(LOCK_ALL, TEMPLATES, LOCK_WITHOUT_UNLOCK, LOCK_CRAFTER, BLOCK_MODDED);
+    private static final Set<String> TRUE_WORDS = Set.of("true", "yes", "on", "да");
+    private static final Set<String> FALSE_WORDS = Set.of("false", "no", "off", "нет");
 
-    /** The file could not be read as TOML at all, so there is no config to use. */
+    /** What an empty file means: everything locked the vanilla way, no rules. */
+    public static final ModConfig DEFAULTS = parse("");
+
+    /** The file could not be read from disk at all, so there is no config to use. */
     public static final class UnreadableException extends Exception {
         public UnreadableException(String message) {
             super(message);
         }
     }
 
-    /** What an empty file means: everything locked the vanilla way, no rules. */
-    public static final ModConfig DEFAULTS = new ModConfig(true, true, false, true, true, List.of(), List.of());
+    private enum Section { SETTINGS, UNLOCKS, UNKNOWN }
+
+    private record KeyValue(String key, String value) {}
 
     private ConfigLoader() {}
 
@@ -54,128 +64,144 @@ public final class ConfigLoader {
                 }
             }
             return parse(Files.readString(file, StandardCharsets.UTF_8));
+        } catch (CharacterCodingException e) {
+            throw new UnreadableException("файл " + file + " сохранён не в кодировке UTF-8; пересохраните его в UTF-8");
         } catch (IOException e) {
             throw new UnreadableException("не удалось прочитать " + file + ": " + e);
         }
     }
 
-    public static ModConfig parse(String text) throws UnreadableException {
-        CommentedConfig root = CommentedConfig.of(LinkedHashMap::new, TomlFormat.instance());
-        try {
-            new TomlParser().parse(new StringReader(addQuotes(text)), root, ParsingMode.MERGE);
-        } catch (RuntimeException e) {
-            throw new UnreadableException("ошибка в разметке файла (TOML): " + e.getMessage());
-        }
-
+    public static ModConfig parse(String text) {
         List<String> problems = new ArrayList<>();
-        Map<String, Object> values = rawValues(root);
-        for (String key : values.keySet()) {
-            if (!KNOWN_KEYS.contains(key)) {
-                problems.add("неизвестная настройка '" + key + "' (условия пишутся ниже строки [unlocks])");
-            }
-        }
+        Map<String, Boolean> settings = new HashMap<>();
+        Map<String, ModConfig.Rule> rules = new LinkedHashMap<>();
+        Map<String, Integer> ruleLines = new HashMap<>();
+        Section section = Section.SETTINGS;
 
-        List<ModConfig.Rule> rules = new ArrayList<>();
-        Object unlocks = values.get(UNLOCKS);
-        if (unlocks instanceof Config table) {
-            for (Map.Entry<String, Object> entry : rawValues(table).entrySet()) {
+        String[] lines = (text.startsWith("﻿") ? text.substring(1) : text).split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i].strip();
+            String where = "строка " + (i + 1) + ": ";
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue;
+            }
+            if (line.startsWith("[")) {
+                section = readHeader(line, where, problems);
+                continue;
+            }
+            if (section == Section.UNKNOWN) {
+                continue;
+            }
+            KeyValue pair = split(line, where, problems);
+            if (pair == null) {
+                continue;
+            }
+            String name = pair.key.toLowerCase(Locale.ROOT);
+            if (section == Section.SETTINGS) {
+                if (!SETTINGS.contains(name)) {
+                    problems.add(where + "неизвестная настройка '" + pair.key + "' (правила пишутся ниже строки [unlocks])");
+                } else {
+                    Boolean flag = TRUE_WORDS.contains(pair.value.toLowerCase(Locale.ROOT)) ? Boolean.TRUE
+                            : FALSE_WORDS.contains(pair.value.toLowerCase(Locale.ROOT)) ? Boolean.FALSE : null;
+                    if (flag == null) {
+                        problems.add(where + "'" + pair.key + "' должно быть true или false, а написано '" + pair.value + "'");
+                    } else if (settings.put(name, flag) != null) {
+                        problems.add(where + "настройка '" + pair.key + "' задана повторно, действует эта строка");
+                    }
+                }
+            } else if (SETTINGS.contains(name)) {
+                problems.add(where + "настройка '" + pair.key + "' должна стоять выше строки [unlocks]; здесь она не действует");
+            } else if (pair.value.startsWith("[")) {
+                problems.add(where + "'" + pair.key + "': списки не поддерживаются, соедините условия через &");
+            } else if (ruleLines.containsKey(pair.key)) {
+                problems.add(where + "для '" + pair.key + "' уже есть правило в строке " + ruleLines.get(pair.key)
+                        + ", эта строка пропущена; соедините условия через & или |");
+            } else {
+                ruleLines.put(pair.key, i + 1);
                 try {
-                    rules.add(new ModConfig.Rule(entry.getKey().trim(), parseRule(entry.getValue())));
+                    rules.put(pair.key, new ModConfig.Rule(pair.key, ExprParser.parse(pair.value)));
                 } catch (ExprParser.SyntaxException e) {
-                    problems.add("'" + entry.getKey() + "': " + e.getMessage());
+                    problems.add(where + "'" + pair.key + "': " + e.getMessage());
                 }
             }
-        } else if (unlocks != null) {
-            problems.add("'" + UNLOCKS + "' должен быть разделом: строка [unlocks] и условия под ней");
         }
 
         return new ModConfig(
-                flag(values, LOCK_ALL, true, problems),
-                flag(values, TEMPLATES, true, problems),
-                flag(values, LOCK_WITHOUT_UNLOCK, false, problems),
-                flag(values, LOCK_CRAFTER, true, problems),
-                flag(values, BLOCK_MODDED, true, problems),
-                List.copyOf(rules),
+                settings.getOrDefault(LOCK_ALL, true),
+                settings.getOrDefault(TEMPLATES, true),
+                settings.getOrDefault(LOCK_WITHOUT_UNLOCK, false),
+                settings.getOrDefault(LOCK_CRAFTER, true),
+                settings.getOrDefault(BLOCK_MODDED, true),
+                List.copyOf(rules.values()),
                 List.copyOf(problems));
     }
 
-    /**
-     * Lets rules be written without quotes: {@code minecraft:torch = break stone 3} becomes
-     * {@code "minecraft:torch" = "break stone 3"}. Only lines below [unlocks] are touched.
-     */
-    static String addQuotes(String text) {
-        StringBuilder out = new StringBuilder(text.length() + 64);
-        boolean inUnlocks = false;
-        for (String line : text.split("\n", -1)) {
-            String trimmed = line.strip();
-            if (trimmed.startsWith("[")) {
-                inUnlocks = trimmed.replace(" ", "").startsWith("[" + UNLOCKS + "]");
-            } else if (inUnlocks && !trimmed.isEmpty() && !trimmed.startsWith("#")) {
-                line = addQuotesToRule(trimmed);
-            }
-            out.append(line).append('\n');
+    private static Section readHeader(String line, String where, List<String> problems) {
+        int close = line.indexOf(']');
+        String name = (close < 0 ? line.substring(1) : line.substring(1, close)).strip();
+        String rest = close < 0 ? "" : line.substring(close + 1).strip();
+        if (close < 0 || !rest.isEmpty() && !rest.startsWith("#")) {
+            problems.add(where + "заголовок раздела пишется отдельной строкой: [" + name + "]");
         }
-        return out.toString();
+        if (name.equalsIgnoreCase(UNLOCKS)) {
+            return Section.UNLOCKS;
+        }
+        problems.add(where + "неизвестный раздел [" + name + "], его строки пропущены; правила пишутся ниже строки [unlocks]");
+        return Section.UNKNOWN;
     }
 
-    private static String addQuotesToRule(String line) {
+    /** Splits {@code key = value}; both sides may be wrapped in single or double quotes. */
+    private static @Nullable KeyValue split(String line, String where, List<String> problems) {
         char first = line.charAt(0);
         boolean quotedKey = first == '"' || first == '\'';
-        // For a quoted key: the position right after its closing quote.
-        int keyEnd = quotedKey ? line.indexOf(first, 1) + 1 : 0;
-        int equals = quotedKey && keyEnd == 0 ? -1 : line.indexOf('=', keyEnd);
-        if (equals < 0 || quotedKey && !line.substring(keyEnd, equals).isBlank()) {
-            return line; // not "key = value": a line of a multi-line list
+        // keyEnd: the closing quote of a quoted key, otherwise the "=" itself.
+        int keyEnd = quotedKey ? line.indexOf(first, 1) : line.indexOf('=');
+        if (quotedKey && keyEnd < 0) {
+            problems.add(where + "не закрыта кавычка");
+            return null;
         }
-        String key = quotedKey ? line.substring(0, keyEnd) : quote(line.substring(0, equals).strip());
-        String value = line.substring(equals + 1).strip();
-        if (!value.startsWith("\"") && !value.startsWith("'") && !value.startsWith("[")) {
-            // "#tag" has no space after the #, a comment does.
-            int comment = value.indexOf("# ");
-            value = quote((comment < 0 ? value : value.substring(0, comment)).strip());
-        }
-        return key + " = " + value;
-    }
-
-    private static String quote(String text) {
-        return '"' + text.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
-    }
-
-    /** Keys exactly as written in the file (a key may contain dots), in file order. */
-    private static Map<String, Object> rawValues(Config config) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        for (Config.Entry entry : config.entrySet()) {
-            values.put(entry.getKey(), entry.getRawValue());
-        }
-        return values;
-    }
-
-    /** A rule is one text line, or a list of lines that must all be fulfilled. */
-    private static Expr parseRule(Object value) throws ExprParser.SyntaxException {
-        if (value instanceof String text) {
-            return ExprParser.parse(text);
-        }
-        if (value instanceof List<?> list && !list.isEmpty()) {
-            List<Expr> parts = new ArrayList<>();
-            for (Object item : list) {
-                if (!(item instanceof String text)) {
-                    throw new ExprParser.SyntaxException("в списке условий должны быть только строки в кавычках");
-                }
-                parts.add(ExprParser.parse(text));
+        int equals = keyEnd;
+        if (quotedKey) {
+            equals = keyEnd + 1;
+            while (equals < line.length() && Character.isWhitespace(line.charAt(equals))) {
+                equals++;
             }
-            return parts.size() == 1 ? parts.getFirst() : new Expr.And(List.copyOf(parts));
         }
-        throw new ExprParser.SyntaxException("условие должно быть строкой в кавычках");
+        if (equals < 0 || equals >= line.length() || line.charAt(equals) != '=') {
+            problems.add(where + "ожидалось 'что = значение', а написано '" + line + "'");
+            return null;
+        }
+        String key = (quotedKey ? line.substring(1, keyEnd) : line.substring(0, keyEnd)).strip();
+        if (key.isEmpty()) {
+            problems.add(where + "перед '=' ничего нет");
+            return null;
+        }
+        String value = line.substring(equals + 1).strip();
+        if (value.startsWith("\"") || value.startsWith("'")) {
+            int close = value.indexOf(value.charAt(0), 1);
+            String rest = close < 0 ? "" : value.substring(close + 1).strip();
+            if (close < 0) {
+                problems.add(where + "не закрыта кавычка");
+                return null;
+            }
+            if (!rest.isEmpty() && !rest.startsWith("#")) {
+                problems.add(where + "лишний текст после закрывающей кавычки: '" + rest + "' (кавычки можно не писать вовсе)");
+                return null;
+            }
+            return new KeyValue(key, value.substring(1, close).strip());
+        }
+        return new KeyValue(key, cutComment(value));
     }
 
-    private static boolean flag(Map<String, Object> values, String key, boolean fallback, List<String> problems) {
-        Object value = values.get(key);
-        if (value instanceof Boolean flag) {
-            return flag;
+    /** A comment starts with a # that stands alone; "#minecraft:logs" is a tag, not a comment. */
+    private static String cutComment(String value) {
+        for (int i = value.indexOf('#'); i >= 0; i = value.indexOf('#', i + 1)) {
+            boolean spaceBefore = i == 0 || Character.isWhitespace(value.charAt(i - 1));
+            boolean spaceAfter = i == value.length() - 1 || Character.isWhitespace(value.charAt(i + 1));
+            if (spaceBefore && spaceAfter) {
+                return value.substring(0, i).strip();
+            }
         }
-        if (value != null) {
-            problems.add("'" + key + "' должно быть true или false, взято " + fallback);
-        }
-        return fallback;
+        return value;
     }
 }

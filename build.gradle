@@ -51,10 +51,14 @@ neoForge {
         }
 
         // NeoForge client WITHOUT this mod: used to check that the mod is server-only.
+        // Add -PjoinServer=host:port to connect straight to a running server.
         cleanClient {
             client()
             loadedMods = []
             gameDirectory = project.file('run/clean-client')
+            if (project.hasProperty('joinServer')) {
+                programArguments.addAll('--quickPlayMultiplayer', project.property('joinServer').toString())
+            }
         }
 
         configureEach {

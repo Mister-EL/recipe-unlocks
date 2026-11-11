@@ -83,9 +83,14 @@ final class UnlockTests {
 
     static void everyTemplateCounts(GameTestHelper helper) {
         Sim.run(helper, () -> {
+            ServerLevel level = helper.getLevel();
+            // Statistics the player brought along do not count: only what is gained while the rule exists.
+            Sim.config("lock_all_recipes = true\n");
+            ServerPlayer player = Sim.join(helper, GameType.SURVIVAL);
+            player.getStats().setValue(player, Stats.CUSTOM.get(Stats.JUMP), 500);
             Sim.config("""
                     [unlocks]
-                    "minecraft:stick" = "stat jump 2"
+                    "minecraft:stick" = "stat jump 3"
                     "minecraft:torch" = "pickup string 3"
                     "minecraft:ladder" = "hit zombie 2"
                     "minecraft:bow" = "kill zombie"
@@ -95,29 +100,33 @@ final class UnlockTests {
                     "minecraft:barrel" = "use ender_pearl"
                     "minecraft:bucket" = "break * 3"
                     """);
-            ServerLevel level = helper.getLevel();
-            ServerPlayer player = Sim.join(helper, GameType.SURVIVAL);
             BlockPos cell = helper.absolutePos(CELL);
             Vec3 at = Vec3.atCenterOf(cell);
 
             player.awardStat(Stats.JUMP);
-            check(helper, !Sim.knows(helper, player, "stick"), "one jump of two");
+            player.awardStat(Stats.JUMP);
+            check(helper, !Sim.knows(helper, player, "stick"), "two jumps of three: " + Sim.progressLine(player, "minecraft:stick"));
             player.awardStat(Stats.JUMP);
             check(helper, Sim.knows(helper, player, "stick"), "stat: a game statistic");
 
-            ItemEntity string = new ItemEntity(level, at.x, at.y, at.z, new ItemStack(Items.STRING, 3));
-            string.setNoPickUpDelay();
-            level.addFreshEntity(string);
-            string.playerTouch(player);
+            for (int picked = 1; picked <= 3; picked++) {
+                check(helper, !Sim.knows(helper, player, "torch"), "picked up " + (picked - 1) + " of three: " + Sim.progressLine(player, "minecraft:torch"));
+                ItemEntity string = new ItemEntity(level, at.x, at.y, at.z, new ItemStack(Items.STRING));
+                string.setNoPickUpDelay();
+                level.addFreshEntity(string);
+                string.playerTouch(player);
+            }
             check(helper, Sim.knows(helper, player, "torch"), "pickup: picking an item up from the ground");
 
             Zombie zombie = EntityTypes.ZOMBIE.create(level, EntitySpawnReason.COMMAND);
             zombie.snapTo(at.x, at.y, at.z);
             level.addFreshEntity(zombie);
             player.attack(zombie);
-            check(helper, !Sim.knows(helper, player, "ladder"), "one hit of two");
             player.attack(zombie);
-            check(helper, Sim.knows(helper, player, "ladder"), "hit: attacking a mob");
+            check(helper, !Sim.knows(helper, player, "ladder"), "a swing during the hurt cooldown is not a hit: " + Sim.progressLine(player, "minecraft:ladder"));
+            zombie.invulnerableTime = 0;
+            player.attack(zombie);
+            check(helper, Sim.knows(helper, player, "ladder"), "hit: a hit that lands on a mob");
             zombie.hurtServer(level, level.damageSources().playerAttack(player), 1000.0F);
             check(helper, Sim.knows(helper, player, "bow"), "kill: killing a mob");
             zombie.discard();
@@ -175,9 +184,16 @@ final class UnlockTests {
             Sim.breakBlock(helper, player, Blocks.STONE, CELL);
             jumpOn(helper, player, Blocks.COBBLESTONE);
             check(helper, Sim.knows(helper, player, "stick"), "unlocked by the rule");
+            // The result is already on screen when the admin resets the player.
+            player.inventoryMenu.getSlot(1).set(new ItemStack(Items.OAK_PLANKS));
+            player.inventoryMenu.getSlot(3).set(new ItemStack(Items.OAK_PLANKS));
+            check(helper, player.inventoryMenu.getSlot(0).getItem().is(Items.STICK), "sticks are offered");
 
             check(helper, UnlockManager.reset(player) == 2, "reset takes back both stick recipes the rule gave");
             check(helper, !Sim.knows(helper, player, "stick"), "the recipe is locked again");
+            check(helper, player.inventoryMenu.getSlot(0).getItem().isEmpty(), "and the result that was on screen is gone");
+            player.inventoryMenu.getSlot(1).set(ItemStack.EMPTY);
+            player.inventoryMenu.getSlot(3).set(ItemStack.EMPTY);
             check(helper, Sim.knows(helper, player, "torch"), "recipes the mod did not give are left alone");
             check(helper, Sim.progressLine(player, "minecraft:stick").contains("break minecraft:stone 0/2"), "counters start over");
 

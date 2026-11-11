@@ -45,38 +45,46 @@ final class SyntaxTests {
             failsWith(helper, "break stone 99999999999", "количество");
             failsWith(helper, "break stone &", "ожидалось условие");
             failsWith(helper, "break st!one", "не похоже на id");
+            failsWith(helper, "break 3 stone", "сначала цель, потом количество");
+            failsWith(helper, "jump 5", "сначала цель, потом количество");
         });
     }
 
     static void configFile(GameTestHelper helper) {
         Sim.run(helper, () -> {
-            ModConfig empty = parse("");
+            ModConfig empty = ConfigLoader.parse("");
             check(helper, empty.lockAll() && empty.templates() && !empty.lockWithoutUnlock() && empty.lockCrafter() && empty.blockModdedStations(),
                     "defaults of a file without settings");
             check(helper, empty.rules().isEmpty() && empty.problems().isEmpty(), "an empty file has no rules and no problems");
 
-            ModConfig config = parse("""
+            // Windows line endings, a byte order mark, tabs: what a file saved by Notepad looks like.
+            ModConfig config = ConfigLoader.parse("\uFEFF" + """
                     lock_all_recipes = false
-                    template_unlocks = false
+                    template_unlocks = FALSE   # off for now
                     lock_recipes_without_unlock = true
-                    lock_crafter = false
-                    block_modded_stations = false
+                    \tlock_crafter=no
+                    block_modded_stations = "false"
 
-                    [unlocks]
+                    [ Unlocks ]   # rules
                     "minecraft:torch" = "break stone 3"
-                    stick = ["jump * 2", "hit zombie | kill zombie"]
-                    "create:cogwheel" = "place #minecraft:logs 10"
-                    """);
+                    minecraft:torch_2 = break stone 3 & (eat apple | drop stick)   # comment
+                    stick=jump #minecraft:logs 2
+                      'minecraft:bread'   =   'eat apple'
+                    "#minecraft:planks" = jump * 2 и hit zombie
+                    some.mod:thing.v2 = stat jump
+                    # minecraft:ladder = break stone
+                    """.replace("\n", "\r\n"));
+            check(helper, config.problems().isEmpty(), "no problems expected, got " + config.problems());
             check(helper, !config.lockAll() && !config.templates() && config.lockWithoutUnlock() && !config.lockCrafter() && !config.blockModdedStations(),
                     "every setting is read");
-            check(helper, config.problems().isEmpty(), "no problems expected, got " + config.problems());
-            check(helper, config.rules().size() == 3, "three rules expected");
-            check(helper, config.rules().get(0).output().equals("minecraft:torch") && config.rules().get(1).output().equals("stick"),
-                    "rules keep the order of the file");
-            check(helper, config.rules().get(1).expr().describe(null).equals("jump * 2 & (hit minecraft:zombie 1 | kill minecraft:zombie 1)"),
-                    "a list of lines means all of them: " + config.rules().get(1).expr().describe(null));
+            check(helper, config.rules().stream().map(ModConfig.Rule::output).toList()
+                            .equals(List.of("minecraft:torch", "minecraft:torch_2", "stick", "minecraft:bread", "#minecraft:planks", "some.mod:thing.v2")),
+                    "rules keep the order of the file: " + config.rules());
+            check(helper, rule(config, 1).equals("break minecraft:stone 3 & (eat minecraft:apple 1 | dropped minecraft:stick 1)"), rule(config, 1));
+            check(helper, rule(config, 2).equals("jump #minecraft:logs 2"), "a tag is not a comment: " + rule(config, 2));
+            check(helper, rule(config, 4).equals("jump * 2 & hit minecraft:zombie 1"), rule(config, 4));
 
-            ModConfig shipped = parse(defaultFile());
+            ModConfig shipped = ConfigLoader.parse(defaultFile());
             check(helper, shipped.problems().isEmpty() && shipped.rules().isEmpty() && shipped.lockAll() && shipped.templates(),
                     "the shipped default file is valid and has no active rules: " + shipped.problems());
             // Every commented example of the shipped file must be a valid rule.
@@ -84,51 +92,49 @@ final class SyntaxTests {
                     .dropWhile(line -> !line.equals("[unlocks]"))
                     .map(line -> line.startsWith("# ") ? line.substring(2) : line)
                     .collect(java.util.stream.Collectors.joining("\n"));
-            ModConfig examples = parse(withExamples);
+            ModConfig examples = ConfigLoader.parse(withExamples);
             check(helper, examples.problems().isEmpty() && examples.rules().size() == 5, "shipped examples: " + examples.problems() + examples.rules());
 
-            // Quotes are optional below [unlocks].
-            ModConfig bare = parse("""
+            // A mistake costs one line and is reported with its number; the rest of the file works.
+            ModConfig broken = ConfigLoader.parse("""
+                    lock_all_recipes = maybe
+                    surprise = true
+                    torch = break stone
                     lock_crafter = false
+                    lock_crafter = true
+                    [unlocks] trailing
+                    minecraft:torch = fly stone
+                    minecraft:stick
+                    bow = kill skeleton
+                    bow = kill zombie
+                    "bread = eat apple
+                    cake = "eat apple" & jump *
+                    chest = [ "jump *", "hit zombie" ]
+                    template_unlocks = false
+                    ladder =
+                    jump 5 = jump 5
+                    [other]
+                    furnace = break stone
                     [unlocks]
-                    minecraft:torch = break stone 3 & (eat apple | drop stick)   # comment
-                    stick=jump #minecraft:logs 2
-                    "minecraft:bow" = hit skeleton
-                      'minecraft:bread'   =   "eat apple"
-                    "#minecraft:planks" = [
-                      "jump * 2",
-                      "hit zombie"
-                    ]
-                    some.mod:thing.v2 = stat jump
-                    # minecraft:ladder = break stone
+                    barrel = break stone 2
                     """);
-            check(helper, bare.problems().isEmpty(), "unquoted rules: " + bare.problems());
-            check(helper, bare.rules().stream().map(ModConfig.Rule::output).toList()
-                            .equals(List.of("minecraft:torch", "stick", "minecraft:bow", "minecraft:bread", "#minecraft:planks", "some.mod:thing.v2")),
-                    "unquoted rules: " + bare.rules());
-            check(helper, bare.rules().get(0).expr().describe(null).equals("break minecraft:stone 3 & (eat minecraft:apple 1 | dropped minecraft:stick 1)"),
-                    bare.rules().get(0).expr().describe(null));
-            check(helper, bare.rules().get(1).expr().describe(null).equals("jump #minecraft:logs 2"), bare.rules().get(1).expr().describe(null));
-            check(helper, !bare.lockCrafter(), "settings above [unlocks] are untouched");
-            check(helper, parse("[unlocks]\ntorch =\n").problems().size() == 1, "an empty rule is a problem, not a crash");
-
-            ModConfig broken = parse("""
-                    lock_all_recipes = "yes"
-                    surprise = 1
-                    [unlocks]
-                    "minecraft:torch" = "fly stone"
-                    "minecraft:stick" = 5
-                    "minecraft:bow" = "kill skeleton"
-                    """);
-            check(helper, broken.lockAll(), "a wrong value falls back to the default");
-            check(helper, broken.rules().size() == 1 && broken.rules().getFirst().output().equals("minecraft:bow"), "good rules survive bad neighbours");
-            check(helper, broken.problems().size() == 4, "four problems expected: " + broken.problems());
-
-            try {
-                ConfigLoader.parse("lock_all_recipes = = true");
-                helper.fail("a file that is not TOML must be rejected");
-            } catch (ConfigLoader.UnreadableException expected) {
-                check(helper, expected.getMessage().contains("TOML"), expected.getMessage());
+            check(helper, broken.lockAll() && broken.templates() && broken.lockCrafter(), "wrong or misplaced settings do not change anything");
+            check(helper, broken.rules().stream().map(ModConfig.Rule::output).toList().equals(List.of("bow", "barrel")),
+                    "good rules survive bad neighbours: " + broken.rules());
+            check(helper, rule(broken, 0).equals("kill minecraft:skeleton 1"), "the first of two rules for one item wins");
+            String[] expected = {
+                "строка 1: 'lock_all_recipes' должно быть true или false", "строка 2: неизвестная настройка 'surprise'",
+                "строка 3: неизвестная настройка 'torch' (правила пишутся ниже", "строка 5: настройка 'lock_crafter' задана повторно",
+                "строка 6: заголовок раздела", "строка 7: 'minecraft:torch': символ 1: неизвестный шаблон 'fly'",
+                "строка 8: ожидалось 'что = значение'", "строка 10: для 'bow' уже есть правило в строке 9",
+                "строка 11: не закрыта кавычка", "строка 12: лишний текст после закрывающей кавычки",
+                "строка 13: 'chest': списки не поддерживаются", "строка 14: настройка 'template_unlocks' должна стоять выше",
+                "строка 15: 'ladder': пустое", "строка 16: 'jump 5': символ 6: сначала цель, потом количество",
+                "строка 17: неизвестный раздел [other]",
+            };
+            check(helper, broken.problems().size() == expected.length, expected.length + " problems expected: " + broken.problems());
+            for (int i = 0; i < Math.min(expected.length, broken.problems().size()); i++) {
+                check(helper, broken.problems().get(i).startsWith(expected[i]), "problem " + i + ": '" + broken.problems().get(i) + "', expected '" + expected[i] + "'");
             }
         });
     }
@@ -166,12 +172,8 @@ final class SyntaxTests {
         return index.entries().stream().filter(e -> e.output().equals(output)).findFirst().orElseThrow();
     }
 
-    private static ModConfig parse(String toml) {
-        try {
-            return ConfigLoader.parse(toml);
-        } catch (ConfigLoader.UnreadableException e) {
-            throw new IllegalStateException(e);
-        }
+    private static String rule(ModConfig config, int index) {
+        return config.rules().get(index).expr().describe(null);
     }
 
     private static String defaultFile() {

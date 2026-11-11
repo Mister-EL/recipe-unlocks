@@ -117,7 +117,11 @@ public final class UnlockIndex {
     /** Result item -> recipes, taken from what every recipe shows in the recipe book. */
     private static Map<Item, Set<RecipeHolder<?>>> recipesByResult(MinecraftServer server) {
         Map<Item, Set<RecipeHolder<?>>> byResult = new HashMap<>();
-        ContextMap context = SlotDisplayContext.fromLevel(server.overworld());
+        // Built from the server, not from a level: the rules may be resolved before the world is loaded.
+        ContextMap context = new ContextMap.Builder()
+                .withParameter(SlotDisplayContext.FUEL_VALUES, server.fuelValues())
+                .withParameter(SlotDisplayContext.REGISTRIES, server.registryAccess())
+                .create(SlotDisplayContext.CONTEXT);
         for (RecipeHolder<?> recipe : server.getRecipeManager().getRecipes()) {
             if (recipe.value().isSpecial()) {
                 continue;
@@ -146,8 +150,8 @@ public final class UnlockIndex {
             this.countersByTrigger.computeIfAbsent(trigger, t -> new ArrayList<>()).add(counter);
         }
         if (!trigger.targetExists(condition.target())) {
-            this.problems.add("'" + output + "': цель '" + condition.target() + "' не найдена (искали в " + trigger.targetKind()
-                    + "), условие '" + condition.counterKey() + "' никогда не выполнится");
+            this.problems.add("'" + output + "': цель '" + condition.target() + "' не найдена среди " + trigger.targetKind()
+                    + ", условие '" + condition.counterKey() + "' никогда не выполнится");
         }
         return counter;
     }

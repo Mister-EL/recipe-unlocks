@@ -116,6 +116,9 @@ public final class ExprParser {
             throw this.error(token, "после '" + token.text + "' нужна цель: id, #тег или *");
         }
         this.index++;
+        if (targetToken.text.chars().allMatch(Character::isDigit)) {
+            throw this.error(targetToken, "сначала цель, потом количество: '" + token.text + " stone " + targetToken.text + "' или '" + token.text + " * " + targetToken.text + "'");
+        }
         Target target = Target.parse(targetToken.text);
         if (target == null) {
             throw this.error(targetToken, "'" + targetToken.text + "' не похоже на id, #тег или *");

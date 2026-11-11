@@ -2,7 +2,9 @@ package io.github.misterel.recipeunlocks.command;
 
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.github.misterel.recipeunlocks.config.ModConfig;
 import io.github.misterel.recipeunlocks.unlock.UnlockManager;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -35,7 +37,11 @@ public final class UnlocksCommand {
             return 0;
         }
         int rules = UnlockManager.index(source.getServer()).entries().size();
-        List<String> problems = result.problems();
+        List<String> problems = new ArrayList<>(result.problems());
+        ModConfig config = UnlockManager.config();
+        if (!config.templatesActive() && !config.rules().isEmpty()) {
+            problems.add("правила из [unlocks] (" + config.rules().size() + ") сейчас выключены: нужны lock_all_recipes = true и template_unlocks = true");
+        }
         source.sendSuccess(() -> Component.literal("Recipe Unlocks: конфиг применён, правил: " + rules + ", замечаний: " + problems.size()), true);
         say(source, problems);
         return 1;
@@ -46,7 +52,9 @@ public final class UnlocksCommand {
         ServerPlayer player = EntityArgument.getPlayer(context, "player");
         List<String> lines = UnlockManager.describeProgress(player);
         if (lines.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("Recipe Unlocks: правил в конфиге нет"), false);
+            ModConfig config = UnlockManager.config();
+            String why = config.rules().isEmpty() || config.templatesActive() ? "действующих правил нет" : "правила из [unlocks] выключены настройками";
+            source.sendSuccess(() -> Component.literal("Recipe Unlocks: " + why), false);
         } else {
             source.sendSuccess(() -> Component.literal("Recipe Unlocks, " + player.getGameProfile().name() + ":"), false);
             say(source, lines);

@@ -53,11 +53,7 @@ final class Sim {
     }
 
     static void config(String toml) {
-        try {
-            UnlockManager.setConfig(ConfigLoader.parse(toml));
-        } catch (ConfigLoader.UnreadableException e) {
-            throw new IllegalStateException(e);
-        }
+        UnlockManager.setConfig(ConfigLoader.parse(toml));
     }
 
     static void check(GameTestHelper helper, boolean condition, String message) {

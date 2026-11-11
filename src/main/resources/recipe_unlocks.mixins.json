@@ -4,10 +4,12 @@
   "package": "io.github.misterel.recipeunlocks.mixin",
   "mixins": [
     "AbstractFurnaceBlockEntityAccessor",
+    "AbstractFurnaceMenuMixin",
     "CampfireBlockEntityMixin",
     "CrafterBlockMixin",
     "CraftingMenuMixin",
     "ItemCombinerMenuAccessor",
+    "RecipeCacheMixin",
     "RecipeCraftingHolderMixin",
     "RecipeManagerMixin",
     "RecipeMapMixin",

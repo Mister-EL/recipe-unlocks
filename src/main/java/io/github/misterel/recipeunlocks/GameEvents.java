@@ -9,14 +9,15 @@ import net.minecraft.world.entity.player.Player;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.StatAwardEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEvent;
-import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import org.slf4j.Logger;
 
@@ -35,6 +36,12 @@ public final class GameEvents {
         // Problems are written to the log by UnlockManager.
         UnlockManager.loadConfig(event.getServer(), true);
         LOGGER.info("[Recipe Unlocks] config: {}", UnlockManager.configFile());
+    }
+
+    @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        // Resolves the rules against the loaded recipes and writes any problems to the log.
+        UnlockManager.index(event.getServer());
     }
 
     @SubscribeEvent
@@ -73,10 +80,11 @@ public final class GameEvents {
         }
     }
 
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    public static void onHit(AttackEntityEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player && !(event.getTarget() instanceof Player)) {
-            UnlockManager.count(player, Trigger.HIT, event.getTarget().getType(), 1);
+    /** A hit is counted when it lands: swings at an invulnerable target or during its hurt cooldown are not hits. */
+    @SubscribeEvent
+    public static void onHit(LivingDamageEvent.Post event) {
+        if (event.getSource().getEntity() instanceof ServerPlayer player && !(event.getEntity() instanceof Player) && event.getInflictedDamage() > 0) {
+            UnlockManager.count(player, Trigger.HIT, event.getEntity().getType(), 1);
         }
     }
 
@@ -97,7 +105,9 @@ public final class GameEvents {
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onStat(StatAwardEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            UnlockManager.countStat(player, event.getStat(), event.getValue());
+            // The event carries the new total; the old one is still stored because we run before it is written.
+            int gained = event.getValue() - player.getStats().getValue(event.getStat());
+            UnlockManager.countStat(player, event.getStat(), gained);
         }
     }
 }
