@@ -172,6 +172,15 @@ final class FeatureTests {
             UnlockManager.take(player, "*");
             check(helper, done(helper, player, "hundred_recipes"), "an earned advancement stays");
 
+            // With a rule the crafting table is no longer free: opening it by the rule is an achievement.
+            Sim.config("[unlocks]\ncrafting_table = break stone\n");
+            ServerPlayer ruled = Sim.join(helper, GameType.SURVIVAL);
+            Sim.unlock(helper, ruled, "crafting_table");
+            check(helper, !Sim.knows(helper, ruled, "crafting_table") && !done(helper, ruled, "first_recipe"), "the rule holds the crafting table back");
+            Sim.breakBlock(helper, ruled, Blocks.STONE, CELL);
+            check(helper, Sim.knows(helper, ruled, "crafting_table") && done(helper, ruled, "first_recipe"), "earned by the rule, it counts");
+            helper.getLevel().removeBlock(helper.absolutePos(CELL), false);
+
             Sim.config("lock_all_recipes = true\ntemplate_unlocks = false\nachievements = false\n");
             ServerPlayer other = Sim.join(helper, GameType.SURVIVAL);
             learn(helper, other, 10);

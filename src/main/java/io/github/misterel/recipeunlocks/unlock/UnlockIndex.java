@@ -118,6 +118,9 @@ public final class UnlockIndex {
             }
         }
 
+        // A recipe with a rule is held back until the rule is fulfilled, so nobody gets it for free.
+        index.givenToEverybody.removeAll(index.ruled);
+
         for (RecipeHolder<?> recipe : recipes.getRecipes()) {
             if (!recipe.value().isSpecial() && !index.ruled.contains(recipe.id()) && !index.unlockedByAdvancements.contains(recipe.id())) {
                 index.recipesWithoutUnlock++;
@@ -249,7 +252,7 @@ public final class UnlockIndex {
         return this.unlockedByAdvancements.contains(recipe);
     }
 
-    /** Recipes an advancement gives to every player on their first tick, such as the crafting table. */
+    /** Recipes an advancement gives to every player on their first tick, such as the crafting table, unless a rule holds them back. */
     public Set<ResourceKey<Recipe<?>>> givenToEverybody() {
         return this.givenToEverybody;
     }
