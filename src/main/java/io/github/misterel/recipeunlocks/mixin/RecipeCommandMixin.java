@@ -16,11 +16,6 @@ public abstract class RecipeCommandMixin {
     @WrapMethod(method = "giveRecipes")
     private static int recipeUnlocks$operatorGrant(
             CommandSourceStack source, Collection<ServerPlayer> players, Collection<RecipeHolder<?>> recipes, Operation<Integer> original) {
-        UnlockManager.setOperatorGrant(true);
-        try {
-            return original.call(source, players, recipes);
-        } finally {
-            UnlockManager.setOperatorGrant(false);
-        }
+        return UnlockManager.grantPastRules(recipes, () -> original.call(source, players, recipes));
     }
 }

@@ -27,6 +27,9 @@ lock_crafter = true
 # Выключите, если какой-то мод начал вести себя странно.
 block_modded_stations = true
 
+# Скрытые достижения за 1, 10 и 100 открытых рецептов (считаются все рецепты в книге игрока).
+achievements = true
+
 # --- Правила ---
 #
 # Одна строка — одно правило:  что открыть = что сделать
@@ -42,6 +45,9 @@ block_modded_stations = true
 #   hit    существо  ударить существо (удар должен нанести урон)
 #   kill   существо  убить существо
 #   eat    предмет   съесть или выпить
+#   dimension измерение  войти в измерение: dimension the_nether, dimension the_end, dimension overworld
+#   biome     биом       войти в биом: biome desert, biome deep_dark, biome #minecraft:is_forest
+#   structure структура  войти внутрь структуры: structure ancient_city, structure #minecraft:village
 #   pickup предмет   подобрать с земли
 #   drop   предмет   выбросить
 #   use    предмет   применить (правая кнопка)
@@ -64,3 +70,4 @@ block_modded_stations = true
 # bow = hit skeleton 2 и pickup string 3
 # "#minecraft:planks" = jump #minecraft:logs 5
 # create:cogwheel = place #minecraft:logs 10 | stat sleep_in_bed
+# brewing_stand = dimension the_nether & (biome #minecraft:is_nether | structure fortress)

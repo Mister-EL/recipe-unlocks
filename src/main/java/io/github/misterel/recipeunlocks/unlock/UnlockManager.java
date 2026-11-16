@@ -9,8 +9,10 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.AdvancementRewards;
 import net.minecraft.advancements.triggers.CriteriaTriggers;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -33,9 +35,8 @@ public final class UnlockManager {
     private static ModConfig indexedConfig;
     private static Object indexedRecipes;
     private static Object indexedAdvancements;
-    /** Recipes a rule is giving right now; see {@link #withoutRuledRecipes}. */
-    private static Set<ResourceKey<Recipe<?>>> ruleGrant = Set.of();
-    private static boolean operatorGrant;
+    /** Recipes a rule or an operator is giving right now; see {@link #withoutRuledRecipes}. */
+    private static Set<ResourceKey<Recipe<?>>> allowedGrant = Set.of();
 
     private UnlockManager() {}
 
@@ -148,14 +149,14 @@ public final class UnlockManager {
      * or an operator gives it; what is held back is remembered for {@link #releaseWithheld}.
      */
     public static Collection<RecipeHolder<?>> withoutRuledRecipes(ServerPlayer player, Collection<RecipeHolder<?>> recipes) {
-        if (operatorGrant || !config.rulesActive() || player instanceof FakePlayer) {
+        if (!config.rulesActive() || player instanceof FakePlayer) {
             return recipes;
         }
         MinecraftServer server = player.level().getServer();
         UnlockIndex current = index(server);
         List<RecipeHolder<?>> allowed = new ArrayList<>(recipes.size());
         for (RecipeHolder<?> recipe : recipes) {
-            if (!current.ruled(recipe.id()) || ruleGrant.contains(recipe.id()) || player.getRecipeBook().contains(recipe.id())) {
+            if (!current.ruled(recipe.id()) || allowedGrant.contains(recipe.id()) || player.getRecipeBook().contains(recipe.id())) {
                 allowed.add(recipe);
             } else {
                 ProgressData data = ProgressData.get(server);
@@ -167,19 +168,19 @@ public final class UnlockManager {
         return allowed.size() == recipes.size() ? recipes : allowed;
     }
 
-    public static void setOperatorGrant(boolean granting) {
-        operatorGrant = granting;
-    }
-
-    private static void grantByRule(ServerPlayer player, List<RecipeHolder<?>> recipes) {
-        Set<ResourceKey<Recipe<?>>> before = ruleGrant;
-        Set<ResourceKey<Recipe<?>>> granting = new HashSet<>(before);
-        recipes.forEach(recipe -> granting.add(recipe.id()));
-        ruleGrant = granting;
+    /**
+     * Gives recipes past their rules: used when a rule is fulfilled and when an operator decides.
+     * Only these recipes pass; whatever else the game gives on the way is still held back.
+     */
+    public static <T> T grantPastRules(Collection<RecipeHolder<?>> recipes, Supplier<T> grant) {
+        Set<ResourceKey<Recipe<?>>> before = allowedGrant;
+        Set<ResourceKey<Recipe<?>>> allowed = new HashSet<>(before);
+        recipes.forEach(recipe -> allowed.add(recipe.id()));
+        allowedGrant = allowed;
         try {
-            player.awardRecipes(recipes);
+            return grant.get();
         } finally {
-            ruleGrant = before;
+            allowedGrant = before;
         }
     }
 
@@ -211,18 +212,34 @@ public final class UnlockManager {
     /** A player did {@code trigger} on {@code value} (a block, an item, an entity type...). */
     public static void count(ServerPlayer player, Trigger trigger, Object value, int amount) {
         if (tracks(player)) {
-            add(player, index(player.level().getServer()).counters(trigger), value, amount);
+            add(player, index(player.level().getServer()).counters(trigger), value, amount, false);
         }
     }
 
     /** The game raised one of the player's statistics. */
     public static void countStat(ServerPlayer player, Stat<?> stat, int amount) {
         if (tracks(player)) {
-            add(player, index(player.level().getServer()).counters(stat.getType()), stat.getValue(), amount);
+            add(player, index(player.level().getServer()).counters(stat.getType()), stat.getValue(), amount, false);
         }
     }
 
-    private static void add(ServerPlayer player, List<UnlockIndex.Counter> counters, Object value, int amount) {
+    /** Whether this player's position has to be looked at for the place templates. */
+    public static boolean watchesPlaces(ServerPlayer player) {
+        return tracks(player) && index(player.level().getServer()).watchesPlaces();
+    }
+
+    /**
+     * A player is in a place they were not in a moment ago.
+     *
+     * @param firstVisitOnly count only if this place has never been counted for the player
+     */
+    public static void countPlace(ServerPlayer player, PlaceTracker.Place place, boolean firstVisitOnly) {
+        if (tracks(player)) {
+            add(player, index(player.level().getServer()).counters(place.trigger()), place.value(), 1, firstVisitOnly);
+        }
+    }
+
+    private static void add(ServerPlayer player, List<UnlockIndex.Counter> counters, Object value, int amount, boolean onlyFromZero) {
         if (counters.isEmpty() || amount <= 0) {
             return;
         }
@@ -237,7 +254,7 @@ public final class UnlockManager {
                 progress = data.of(player.getUUID());
             }
             int before = progress.counters.getInt(counter.key());
-            if (before >= counter.cap()) {
+            if (before >= counter.cap() || onlyFromZero && before > 0) {
                 continue;
             }
             progress.counters.put(counter.key(), (int) Math.min((long) before + amount, counter.cap()));
@@ -276,7 +293,7 @@ public final class UnlockManager {
         if (missing.isEmpty() || !entry.expr().test(counterOf(progress))) {
             return;
         }
-        grantByRule(player, missing);
+        grantPastRules(missing, () -> player.awardRecipes(missing));
         for (RecipeHolder<?> recipe : missing) {
             progress.awarded.add(recipe.id().identifier());
             progress.withheld.remove(recipe.id().identifier());
@@ -301,40 +318,161 @@ public final class UnlockManager {
         if (progress == null) {
             return 0;
         }
-        Set<ResourceKey<Recipe<?>>> keys = new HashSet<>();
         List<RecipeHolder<?>> revoke = new ArrayList<>();
         for (Identifier id : progress.awarded) {
-            ResourceKey<Recipe<?>> key = ResourceKey.create(Registries.RECIPE, id);
-            keys.add(key);
-            server.getRecipeManager().byKey(key).ifPresent(revoke::add);
+            server.getRecipeManager().byKey(ResourceKey.create(Registries.RECIPE, id)).ifPresent(revoke::add);
         }
         progress.counters.clear();
         progress.awarded.clear();
         data.setDirty();
-        if (revoke.isEmpty()) {
+        return revoke(player, revoke, progress, false);
+    }
+
+    /** What a give or take command did. */
+    public record CommandResult(int recipes, List<String> problems) {}
+
+    /**
+     * An operator opens recipes for a player, rule or no rule.
+     *
+     * @param what an item id (all its recipes), an item #tag, a recipe id, or * for every recipe
+     */
+    public static CommandResult give(ServerPlayer player, String what) {
+        List<String> problems = new ArrayList<>();
+        List<RecipeHolder<?>> missing = new ArrayList<>();
+        for (RecipeHolder<?> recipe : recipesNamed(player.level().getServer(), what, problems)) {
+            if (!player.getRecipeBook().contains(recipe.id())) {
+                missing.add(recipe);
+            }
+        }
+        if (!missing.isEmpty()) {
+            grantPastRules(missing, () -> player.awardRecipes(missing));
+        }
+        return new CommandResult(missing.size(), problems);
+    }
+
+    /**
+     * An operator closes recipes for a player and makes them start over: the counters of the rules
+     * for these recipes are cleared, and so are the vanilla recipe advancements, so that the recipe
+     * neither comes back on its own nor stays lost for ever.
+     *
+     * @param what an item id (all its recipes), an item #tag, a recipe id, or * for every recipe
+     */
+    public static CommandResult take(ServerPlayer player, String what) {
+        MinecraftServer server = player.level().getServer();
+        List<String> problems = new ArrayList<>();
+        List<RecipeHolder<?>> named = recipesNamed(server, what, problems);
+        ProgressData data = ProgressData.get(server);
+        ProgressData.PlayerProgress progress = data.of(player.getUUID());
+
+        Set<ResourceKey<Recipe<?>>> keys = new HashSet<>();
+        named.forEach(recipe -> keys.add(recipe.id()));
+        for (UnlockIndex.Entry entry : index(server).entries()) {
+            if (entry.recipes().stream().anyMatch(recipe -> keys.contains(recipe.id()))) {
+                entry.expr().forEachCondition(condition -> progress.counters.removeInt(condition.counterKey()));
+            }
+        }
+        List<RecipeHolder<?>> known = new ArrayList<>();
+        for (RecipeHolder<?> recipe : named) {
+            progress.awarded.remove(recipe.id().identifier());
+            if (player.getRecipeBook().contains(recipe.id())) {
+                known.add(recipe);
+            }
+        }
+        data.setDirty();
+        return new CommandResult(revoke(player, known, progress, true), problems);
+    }
+
+    private static List<RecipeHolder<?>> recipesNamed(MinecraftServer server, String what, List<String> problems) {
+        if (!what.strip().equals("*")) {
+            return index(server).recipesFor(what.strip(), problems);
+        }
+        List<RecipeHolder<?>> all = new ArrayList<>();
+        for (RecipeHolder<?> recipe : server.getRecipeManager().getRecipes()) {
+            if (!recipe.value().isSpecial()) {
+                all.add(recipe);
+            }
+        }
+        return all;
+    }
+
+    /**
+     * Removes recipes from the player's recipe book and undoes what unlocking them did to the
+     * vanilla advancements that reward them.
+     *
+     * @param startOver also undo the advancement's own criteria (such as "has planks"), so that the
+     *                  game can give the recipe again; without it only the "has the recipe" tick
+     *                  that every unlock leaves behind is undone
+     * @return how many recipes were removed
+     */
+    private static int revoke(ServerPlayer player, List<RecipeHolder<?>> recipes, ProgressData.PlayerProgress progress, boolean startOver) {
+        if (recipes.isEmpty()) {
             return 0;
         }
-        player.resetRecipes(revoke);
+        MinecraftServer server = player.level().getServer();
+        Set<ResourceKey<Recipe<?>>> keys = new HashSet<>();
+        recipes.forEach(recipe -> keys.add(recipe.id()));
+        player.resetRecipes(recipes);
         for (AdvancementHolder advancement : server.getAdvancements().getAllAdvancements()) {
             List<ResourceKey<Recipe<?>>> rewards = advancement.value().rewards().recipes();
             if (rewards.stream().noneMatch(keys::contains)) {
                 continue;
             }
-            // Giving a recipe ticks the "has the recipe" criterion of its vanilla advancement; undo that.
+            // An advancement nobody sees and that rewards nothing else exists only to hand out its recipes.
+            AdvancementRewards all = advancement.value().rewards();
+            boolean recipeOnly = advancement.value().display().isEmpty()
+                    && all.experience() == 0 && all.loot().isEmpty() && all.function().isEmpty();
             advancement.value().criteria().forEach((name, criterion) -> {
-                if (criterion.trigger() == CriteriaTriggers.RECIPE_UNLOCKED) {
+                if (criterion.trigger() == CriteriaTriggers.RECIPE_UNLOCKED || startOver && recipeOnly) {
                     player.getAdvancements().revoke(advancement, name);
                 }
             });
             // Still complete: the game itself would have given the recipe. Remember that for the day the rule is removed.
             if (player.getAdvancements().getOrStartProgress(advancement).isDone()) {
-                rewards.stream().filter(keys::contains).forEach(key -> progress.withheld.add(key.identifier()));
+                UnlockIndex current = index(server);
+                rewards.stream().filter(keys::contains).filter(current::ruled).forEach(key -> progress.withheld.add(key.identifier()));
             }
         }
+        ProgressData.get(server).setDirty();
         // A result that is already on screen would otherwise be taken and bring the recipe back.
         player.closeContainer();
         player.inventoryMenu.slotsChanged(player.inventoryMenu.getCraftSlots());
-        return revoke.size();
+        return recipes.size();
+    }
+
+    /** A hidden advancement of this mod and how many recipes a player needs in the recipe book for it. */
+    private record Achievement(Identifier id, int recipes) {}
+
+    /** In the order they are earned, so that they are also announced in that order. */
+    private static final List<Achievement> ACHIEVEMENTS = List.of(
+            new Achievement(Identifier.fromNamespaceAndPath("recipe_unlocks", "first_recipe"), 1),
+            new Achievement(Identifier.fromNamespaceAndPath("recipe_unlocks", "ten_recipes"), 10),
+            new Achievement(Identifier.fromNamespaceAndPath("recipe_unlocks", "hundred_recipes"), 100));
+
+    /**
+     * Gives the advancements the player has earned by the number of recipes in their recipe book.
+     * Recipes the game hands to everybody on their first tick are not an achievement and do not count.
+     */
+    public static void checkAchievements(ServerPlayer player, Set<ResourceKey<Recipe<?>>> known) {
+        ModConfig current = config;
+        // A player who is still logging in has no connection yet; the login event checks again.
+        if (known.isEmpty() || !current.active() || !current.achievements() || player instanceof FakePlayer || player.connection == null) {
+            return;
+        }
+        MinecraftServer server = player.level().getServer();
+        int earned = known.size();
+        for (ResourceKey<Recipe<?>> free : index(server).givenToEverybody()) {
+            if (known.contains(free)) {
+                earned--;
+            }
+        }
+        for (Achievement achievement : ACHIEVEMENTS) {
+            AdvancementHolder advancement = earned >= achievement.recipes ? server.getAdvancements().get(achievement.id) : null;
+            if (advancement != null) {
+                List<String> remaining = new ArrayList<>();
+                player.getAdvancements().getOrStartProgress(advancement).getRemainingCriteria().forEach(remaining::add);
+                remaining.forEach(criterion -> player.getAdvancements().award(advancement, criterion));
+            }
+        }
     }
 
     /** One line per rule: unlocked, or the rule with the player's numbers filled in. */

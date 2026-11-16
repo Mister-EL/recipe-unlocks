@@ -11,6 +11,7 @@ import java.util.List;
  * @param lockWithoutUnlock   also lock recipes that nothing can ever unlock
  * @param lockCrafter         the crafter block only crafts what its owner has unlocked
  * @param blockModdedStations hide locked recipes from recipe lookups made on behalf of a player
+ * @param achievements        give the hidden advancements for 1, 10 and 100 unlocked recipes
  * @param rules               the [unlocks] rules, in file order
  * @param problems            human-readable problems found while reading the file
  */
@@ -20,6 +21,7 @@ public record ModConfig(
         boolean lockWithoutUnlock,
         boolean lockCrafter,
         boolean blockModdedStations,
+        boolean achievements,
         List<Rule> rules,
         List<String> problems) {
 
@@ -27,7 +29,7 @@ public record ModConfig(
     public record Rule(String output, Expr expr) {}
 
     /** Used until the server reads the real config: the mod does nothing. */
-    public static final ModConfig DISABLED = new ModConfig(false, false, false, false, false, List.of(), List.of());
+    public static final ModConfig DISABLED = new ModConfig(false, false, false, false, false, false, List.of(), List.of());
 
     /** The [unlocks] rules are switched on and there is at least one. */
     public boolean rulesActive() {

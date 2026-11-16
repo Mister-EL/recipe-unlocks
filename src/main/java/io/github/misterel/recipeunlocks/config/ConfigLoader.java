@@ -33,8 +33,9 @@ public final class ConfigLoader {
     private static final String LOCK_WITHOUT_UNLOCK = "lock_recipes_without_unlock";
     private static final String LOCK_CRAFTER = "lock_crafter";
     private static final String BLOCK_MODDED = "block_modded_stations";
+    private static final String ACHIEVEMENTS = "achievements";
     private static final String UNLOCKS = "unlocks";
-    private static final Set<String> SETTINGS = Set.of(LOCK_ALL, TEMPLATES, LOCK_WITHOUT_UNLOCK, LOCK_CRAFTER, BLOCK_MODDED);
+    private static final Set<String> SETTINGS = Set.of(LOCK_ALL, TEMPLATES, LOCK_WITHOUT_UNLOCK, LOCK_CRAFTER, BLOCK_MODDED, ACHIEVEMENTS);
     private static final Set<String> TRUE_WORDS = Set.of("true", "yes", "on", "да");
     private static final Set<String> FALSE_WORDS = Set.of("false", "no", "off", "нет");
 
@@ -132,6 +133,7 @@ public final class ConfigLoader {
                 settings.getOrDefault(LOCK_WITHOUT_UNLOCK, false),
                 settings.getOrDefault(LOCK_CRAFTER, true),
                 settings.getOrDefault(BLOCK_MODDED, true),
+                settings.getOrDefault(ACHIEVEMENTS, true),
                 List.copyOf(rules.values()),
                 List.copyOf(problems));
     }

@@ -33,6 +33,9 @@ final class SyntaxTests {
             parsesTo(helper, "stat jump 5 & killed_by zombie & minecraft:broken wooden_pickaxe",
                     "custom minecraft:jump 5 & killed_by minecraft:zombie 1 & broken minecraft:wooden_pickaxe 1");
             parsesTo(helper, "break create:cogwheel", "break create:cogwheel 1");
+            // where the player is
+            parsesTo(helper, "dimension the_nether & biome #minecraft:is_forest | structure ancient_city 2",
+                    "dimension minecraft:the_nether 1 & biome #minecraft:is_forest 1 | structure minecraft:ancient_city 2");
 
             failsWith(helper, "", "пустое");
             failsWith(helper, "fly stone", "неизвестный шаблон 'fly'");
@@ -93,7 +96,7 @@ final class SyntaxTests {
                     .map(line -> line.startsWith("# ") ? line.substring(2) : line)
                     .collect(java.util.stream.Collectors.joining("\n"));
             ModConfig examples = ConfigLoader.parse(withExamples);
-            check(helper, examples.problems().isEmpty() && examples.rules().size() == 5, "shipped examples: " + examples.problems() + examples.rules());
+            check(helper, examples.problems().isEmpty() && examples.rules().size() == 6, "shipped examples: " + examples.problems() + examples.rules());
 
             // A mistake costs one line and is reported with its number; the rest of the file works.
             ModConfig broken = ConfigLoader.parse("""
@@ -151,10 +154,19 @@ final class SyntaxTests {
                     "minecraft:iron_ingot" = "hit zombie"
                     "minecraft:iron_ingot_from_blasting_raw_iron" = "hit zombie 2"
                     "minecraft:dirt" = "break stone"
+                    "minecraft:torch" = "dimension narnia | dimension #minecraft:overworld"
+                    "minecraft:ladder" = "biome atlantis | structure #minecraft:no_such_tag"
+                    "minecraft:bread" = "dimension the_end & biome plains & biome #minecraft:is_forest & structure ancient_city & structure #minecraft:village"
                     """);
             UnlockIndex index = UnlockManager.index(helper.getLevel().getServer());
             List<String> problems = index.problems();
-            check(helper, problems.size() == 4, "four problems expected: " + problems);
+            check(helper, problems.size() == 8, "eight problems expected: " + problems);
+            check(helper, problems.stream().anyMatch(p -> p.contains("'minecraft:narnia'") && p.contains("измерений (есть: ") && p.contains("minecraft:the_nether")),
+                    "an unknown dimension is reported with the list of real ones: " + problems);
+            check(helper, problems.stream().anyMatch(p -> p.contains("'#minecraft:overworld'")), "dimensions have no tags: " + problems);
+            check(helper, problems.stream().anyMatch(p -> p.contains("'minecraft:atlantis'") && p.contains("биомов")), "unknown biome: " + problems);
+            check(helper, problems.stream().anyMatch(p -> p.contains("'#minecraft:no_such_tag'") && p.contains("структур")), "unknown structure tag: " + problems);
+            check(helper, problems.stream().noneMatch(p -> p.startsWith("'minecraft:bread'")), "real places are accepted: " + problems);
             check(helper, problems.stream().anyMatch(p -> p.contains("'minecraft:ston'")), "unknown block is reported: " + problems);
             check(helper, problems.stream().anyMatch(p -> p.contains("no_such_thing")), "unknown output is reported");
             check(helper, problems.stream().anyMatch(p -> p.contains("no_such_tag")), "unknown tag is reported");

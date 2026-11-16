@@ -2,6 +2,7 @@ package io.github.misterel.recipeunlocks.test;
 
 import com.mojang.authlib.GameProfile;
 import io.github.misterel.recipeunlocks.config.ConfigLoader;
+import io.github.misterel.recipeunlocks.mixin.ServerRecipeBookAccessor;
 import io.github.misterel.recipeunlocks.unlock.UnlockManager;
 import io.netty.channel.embedded.EmbeddedChannel;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
@@ -111,6 +112,10 @@ final class Sim {
 
     static boolean knows(GameTestHelper helper, ServerPlayer player, String recipeId) {
         return player.getRecipeBook().contains(recipe(helper, recipeId).id());
+    }
+
+    static int knownRecipes(ServerPlayer player) {
+        return ((ServerRecipeBookAccessor) player.getRecipeBook()).recipeUnlocks$known().size();
     }
 
     static void unlock(GameTestHelper helper, ServerPlayer player, String recipeId) {

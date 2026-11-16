@@ -15,6 +15,7 @@
     "RecipeManagerMixin",
     "RecipeMapMixin",
     "ServerGamePacketListenerImplMixin",
+    "ServerRecipeBookAccessor",
     "ServerRecipeBookMixin",
     "SlotMixin",
     "SmithingMenuMixin",

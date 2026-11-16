@@ -1,8 +1,10 @@
 package io.github.misterel.recipeunlocks.unlock;
 
 import java.util.Locale;
+import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.TagKey;
 import org.jspecify.annotations.Nullable;
 
@@ -28,6 +30,15 @@ public record Target(Kind kind, @Nullable Identifier id) {
             case ANY -> true;
             case ID -> this.id.equals(registry.getKey(value));
             case TAG -> registry.wrapAsHolder(value).is(TagKey.create(registry.key(), this.id));
+        };
+    }
+
+    /** For registries that belong to the world (biomes, structures), where values are handled as holders. */
+    public <T> boolean matches(Holder<T> holder, ResourceKey<? extends Registry<T>> registry) {
+        return switch (this.kind) {
+            case ANY -> true;
+            case ID -> holder.is(this.id);
+            case TAG -> holder.is(TagKey.create(registry, this.id));
         };
     }
 

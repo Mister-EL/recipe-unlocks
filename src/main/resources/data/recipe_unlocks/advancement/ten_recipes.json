@@ -1,0 +1,24 @@
+{
+  "parent": "recipe_unlocks:first_recipe",
+  "display": {
+    "icon": {
+      "id": "minecraft:book"
+    },
+    "title": "Подмастерье",
+    "description": "Открыть 10 рецептов",
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": true
+  },
+  "criteria": {
+    "recipes": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "recipes"
+    ]
+  ]
+}

@@ -46,6 +46,9 @@ public final class RecipeUnlocksTests {
         QUICK.put("creative_is_not_counted", UnlockTests::creativeIsNotCounted);
         QUICK.put("reset_takes_recipes_back", UnlockTests::resetTakesRecipesBack);
         QUICK.put("progress_is_saved", UnlockTests::progressIsSaved);
+        QUICK.put("give_and_take", FeatureTests::giveAndTake);
+        QUICK.put("places_count_on_entering", FeatureTests::placesCountOnEntering);
+        QUICK.put("achievements_for_known_recipes", FeatureTests::achievementsForKnownRecipes);
         SLOW.put("crafter_follows_owner", LockTests::crafterFollowsOwner);
 
         QUICK.forEach((name, test) -> FUNCTIONS.register(name, () -> test));

@@ -1,5 +1,7 @@
 package io.github.misterel.recipeunlocks.command;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.github.misterel.recipeunlocks.config.ModConfig;
@@ -8,14 +10,16 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
-/** {@code /unlocks reload | progress <player> | reset <player>} for operators. */
+/** {@code /unlocks reload | progress <player> | reset <player> | give <player> <what> | take <player> <what>} for operators. */
 public final class UnlocksCommand {
     private static final int MAX_LINES = 40;
+    private static final String WHAT = "what";
 
     private UnlocksCommand() {}
 
@@ -26,7 +30,47 @@ public final class UnlocksCommand {
                 .then(Commands.literal("progress")
                         .then(Commands.argument("player", EntityArgument.player()).executes(UnlocksCommand::progress)))
                 .then(Commands.literal("reset")
-                        .then(Commands.argument("player", EntityArgument.player()).executes(UnlocksCommand::reset))));
+                        .then(Commands.argument("player", EntityArgument.player()).executes(UnlocksCommand::reset)))
+                .then(Commands.literal("give")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(what().executes(context -> giveOrTake(context, true)))))
+                .then(Commands.literal("take")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(what().executes(context -> giveOrTake(context, false))))));
+    }
+
+    /**
+     * What to give or take: an item id, an item #tag, a recipe id or *. A plain text argument, so
+     * that clients without the mod understand the command; the server suggests the item ids.
+     */
+    private static RequiredArgumentBuilder<CommandSourceStack, String> what() {
+        return Commands.argument(WHAT, StringArgumentType.greedyString()).suggests((context, builder) -> {
+            if ("*".startsWith(builder.getRemaining())) {
+                builder.suggest("*");
+            }
+            return SharedSuggestionProvider.suggestResource(UnlockManager.index(context.getSource().getServer()).craftableItems(), builder);
+        });
+    }
+
+    private static int giveOrTake(CommandContext<CommandSourceStack> context, boolean give) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        ServerPlayer player = EntityArgument.getPlayer(context, "player");
+        String what = StringArgumentType.getString(context, WHAT).strip();
+        UnlockManager.CommandResult result = give ? UnlockManager.give(player, what) : UnlockManager.take(player, what);
+        if (!result.problems().isEmpty()) {
+            source.sendFailure(Component.literal("Recipe Unlocks: " + String.join("; ", result.problems())));
+            return 0;
+        }
+        String name = player.getGameProfile().name();
+        String message;
+        if (give) {
+            message = result.recipes() == 0 ? name + " уже знает эти рецепты" : name + ": открыто рецептов: " + result.recipes();
+        } else {
+            message = (result.recipes() == 0 ? name + " и так не знает этих рецептов" : name + ": закрыто рецептов: " + result.recipes())
+                    + "; счётчики правил для них обнулены";
+        }
+        source.sendSuccess(() -> Component.literal("Recipe Unlocks: " + message + " (" + what + ")"), true);
+        return Math.max(result.recipes(), 1);
     }
 
     private static int reload(CommandContext<CommandSourceStack> context) {

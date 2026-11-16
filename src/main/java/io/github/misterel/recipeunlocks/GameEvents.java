@@ -1,6 +1,8 @@
 package io.github.misterel.recipeunlocks;
 
 import com.mojang.logging.LogUtils;
+import io.github.misterel.recipeunlocks.mixin.ServerRecipeBookAccessor;
+import io.github.misterel.recipeunlocks.unlock.PlaceTracker;
 import io.github.misterel.recipeunlocks.unlock.Trigger;
 import io.github.misterel.recipeunlocks.unlock.UnlockManager;
 import net.minecraft.core.BlockPos;
@@ -18,6 +20,7 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import org.slf4j.Logger;
 
@@ -47,12 +50,29 @@ public final class GameEvents {
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         UnlockManager.clear();
+        PlaceTracker.clear();
     }
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             UnlockManager.evaluateAll(player);
+            UnlockManager.checkAchievements(player, ((ServerRecipeBookAccessor) player.getRecipeBook()).recipeUnlocks$known());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            PlaceTracker.forget(player);
+        }
+    }
+
+    /** Dimension, biome and structure templates: where the player is gets looked at once a second. */
+    @SubscribeEvent
+    public static void onPlayerTick(PlayerTickEvent.Post event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            PlaceTracker.tick(player);
         }
     }
 
