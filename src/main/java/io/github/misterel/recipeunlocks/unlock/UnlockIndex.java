@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import net.minecraft.advancements.AdvancementHolder;
-import net.minecraft.advancements.triggers.CriteriaTriggers;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -76,7 +75,6 @@ public final class UnlockIndex {
     private final Map<StatType<?>, List<Counter>> countersByStat = new IdentityHashMap<>();
     private final Set<ResourceKey<Recipe<?>>> unlockedByAdvancements = new HashSet<>();
     private final Set<ResourceKey<Recipe<?>>> ruled = new HashSet<>();
-    private final Set<ResourceKey<Recipe<?>>> givenToEverybody = new HashSet<>();
     private final List<String> problems = new ArrayList<>();
     private final MinecraftServer server;
     private Map<Item, Set<RecipeHolder<?>>> byResult;
@@ -91,11 +89,7 @@ public final class UnlockIndex {
         RecipeManager recipes = server.getRecipeManager();
 
         for (AdvancementHolder advancement : server.getAdvancements().getAllAdvancements()) {
-            List<ResourceKey<Recipe<?>>> rewards = advancement.value().rewards().recipes();
-            index.unlockedByAdvancements.addAll(rewards);
-            if (advancement.value().criteria().values().stream().anyMatch(criterion -> criterion.trigger() == CriteriaTriggers.TICK)) {
-                index.givenToEverybody.addAll(rewards);
-            }
+            index.unlockedByAdvancements.addAll(advancement.value().rewards().recipes());
         }
 
         if (config.rulesActive()) {
@@ -117,9 +111,6 @@ public final class UnlockIndex {
                 });
             }
         }
-
-        // A recipe with a rule is held back until the rule is fulfilled, so nobody gets it for free.
-        index.givenToEverybody.removeAll(index.ruled);
 
         for (RecipeHolder<?> recipe : recipes.getRecipes()) {
             if (!recipe.value().isSpecial() && !index.ruled.contains(recipe.id()) && !index.unlockedByAdvancements.contains(recipe.id())) {
@@ -250,11 +241,6 @@ public final class UnlockIndex {
     /** True when some advancement of the game gives this recipe. */
     public boolean unlockedByAdvancements(ResourceKey<Recipe<?>> recipe) {
         return this.unlockedByAdvancements.contains(recipe);
-    }
-
-    /** Recipes an advancement gives to every player on their first tick, such as the crafting table, unless a rule holds them back. */
-    public Set<ResourceKey<Recipe<?>>> givenToEverybody() {
-        return this.givenToEverybody;
     }
 
     /** True when a config rule unlocks this recipe; then the rule is the only way to get it. */

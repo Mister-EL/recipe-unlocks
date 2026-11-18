@@ -5,7 +5,6 @@ import static io.github.misterel.recipeunlocks.test.Sim.check;
 import io.github.misterel.recipeunlocks.unlock.PlaceTracker;
 import io.github.misterel.recipeunlocks.unlock.Trigger;
 import io.github.misterel.recipeunlocks.unlock.UnlockManager;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +16,6 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.structure.Structure;
@@ -149,63 +147,68 @@ final class FeatureTests {
 
     static void achievementsForKnownRecipes(GameTestHelper helper) {
         Sim.run(helper, () -> {
-            Sim.config("lock_all_recipes = true\ntemplate_unlocks = false\n");
-            ServerPlayer player = Sim.join(helper, GameType.SURVIVAL);
-            check(helper, Sim.knownRecipes(player) == 0, "a new player knows no recipes, got " + Sim.knownRecipes(player));
-            check(helper, !done(helper, player, "first_recipe"), "nothing is given for nothing");
-            // The game gives the crafting table recipe to everybody on their first tick: not an achievement.
-            Sim.unlock(helper, player, "crafting_table");
-            check(helper, Sim.knownRecipes(player) == 1 && !done(helper, player, "first_recipe"), "a recipe everybody gets for free does not count");
             check(helper, advancement(helper, "hundred_recipes").value().display().orElseThrow().isHidden(), "the advancements are hidden until earned");
 
-            learn(helper, player, 1);
-            check(helper, done(helper, player, "first_recipe") && !done(helper, player, "ten_recipes"), "1 recipe: the first advancement");
-            learn(helper, player, 9);
-            check(helper, !done(helper, player, "ten_recipes"), "9 recipes are not 10");
-            learn(helper, player, 10);
-            check(helper, done(helper, player, "ten_recipes") && !done(helper, player, "hundred_recipes"), "10 recipes: the second advancement");
-            learn(helper, player, 99);
-            check(helper, !done(helper, player, "hundred_recipes"), "99 recipes are not 100");
-            learn(helper, player, 100);
-            check(helper, done(helper, player, "hundred_recipes"), "100 recipes: the third advancement");
+            // Recipes without a rule never count, however many.
+            Sim.config("lock_all_recipes = true\ntemplate_unlocks = false\n");
+            ServerPlayer vanilla = Sim.join(helper, GameType.SURVIVAL);
+            Sim.unlock(helper, vanilla, "crafting_table");
+            UnlockManager.give(vanilla, "*");
+            check(helper, Sim.knownRecipes(vanilla) > 1000 && !done(helper, vanilla, "first_recipe"), "recipes without a rule do not count");
 
-            UnlockManager.take(player, "*");
-            check(helper, done(helper, player, "hundred_recipes"), "an earned advancement stays");
-
-            // With a rule the crafting table is no longer free: opening it by the rule is an achievement.
-            Sim.config("[unlocks]\ncrafting_table = break stone\n");
-            ServerPlayer ruled = Sim.join(helper, GameType.SURVIVAL);
-            Sim.unlock(helper, ruled, "crafting_table");
-            check(helper, !Sim.knows(helper, ruled, "crafting_table") && !done(helper, ruled, "first_recipe"), "the rule holds the crafting table back");
-            Sim.breakBlock(helper, ruled, Blocks.STONE, CELL);
-            check(helper, Sim.knows(helper, ruled, "crafting_table") && done(helper, ruled, "first_recipe"), "earned by the rule, it counts");
+            // One rule counts once, and only when all of its recipes are known.
+            Sim.config("""
+                    [unlocks]
+                    iron_ingot = stat jump 1000000
+                    stick = break stone
+                    """);
+            ServerPlayer player = Sim.join(helper, GameType.SURVIVAL);
+            UnlockManager.give(player, "#minecraft:planks");
+            check(helper, !done(helper, player, "first_recipe"), "recipes of items without a rule do not count");
+            UnlockManager.give(player, "iron_ingot_from_nuggets");
+            check(helper, UnlockManager.rulesDone(player) == 0 && !done(helper, player, "first_recipe"), "one of the 8 iron ingot recipes is not the whole rule");
+            UnlockManager.give(player, "iron_ingot");
+            check(helper, UnlockManager.rulesDone(player) == 1 && done(helper, player, "first_recipe"), "all 8 recipes given by an operator: the rule counts once");
+            Sim.breakBlock(helper, player, Blocks.STONE, CELL);
+            check(helper, UnlockManager.rulesDone(player) == 2, "a fulfilled rule counts: " + UnlockManager.rulesDone(player));
             helper.getLevel().removeBlock(helper.absolutePos(CELL), false);
 
-            Sim.config("lock_all_recipes = true\ntemplate_unlocks = false\nachievements = false\n");
+            // The thresholds, on a config of 100 rules nobody can fulfil by playing.
+            List<String> items = UnlockManager.index(helper.getLevel().getServer()).craftableItems().stream()
+                    .map(Identifier::toString).sorted().limit(100).toList();
+            check(helper, items.size() == 100, "100 craftable items expected, got " + items.size());
+            StringBuilder rules = new StringBuilder("[unlocks]\n");
+            items.forEach(item -> rules.append(item).append(" = stat jump 1000000\n"));
+            Sim.config(rules.toString());
+            ServerPlayer collector = Sim.join(helper, GameType.SURVIVAL);
+            check(helper, UnlockManager.index(helper.getLevel().getServer()).entries().size() == 100, "all 100 rules are in force");
+            giveRules(helper, collector, items, 0, 1);
+            check(helper, done(helper, collector, "first_recipe") && !done(helper, collector, "ten_recipes"), "1 rule: the first advancement");
+            giveRules(helper, collector, items, 1, 9);
+            check(helper, !done(helper, collector, "ten_recipes"), "9 rules are not 10");
+            giveRules(helper, collector, items, 9, 10);
+            check(helper, done(helper, collector, "ten_recipes") && !done(helper, collector, "hundred_recipes"), "10 rules: the second advancement");
+            giveRules(helper, collector, items, 10, 99);
+            check(helper, !done(helper, collector, "hundred_recipes"), "99 rules are not 100");
+            giveRules(helper, collector, items, 99, 100);
+            check(helper, done(helper, collector, "hundred_recipes"), "100 rules: the third advancement");
+
+            UnlockManager.take(collector, "*");
+            check(helper, UnlockManager.rulesDone(collector) == 0 && done(helper, collector, "hundred_recipes"), "an earned advancement stays after take");
+
+            Sim.config("achievements = false\n[unlocks]\nstick = break stone\n");
             ServerPlayer other = Sim.join(helper, GameType.SURVIVAL);
-            learn(helper, other, 10);
+            UnlockManager.give(other, "stick");
             check(helper, !done(helper, other, "first_recipe"), "achievements = false switches them off");
         });
     }
 
-    /** Opens recipes until the player has earned exactly {@code total}, not counting the free ones. */
-    private static void learn(GameTestHelper helper, ServerPlayer player, int total) {
-        var server = helper.getLevel().getServer();
-        var free = UnlockManager.index(server).givenToEverybody();
-        java.util.function.IntSupplier earned = () -> Sim.knownRecipes(player) - (int) free.stream().filter(player.getRecipeBook()::contains).count();
-        List<RecipeHolder<?>> more = new ArrayList<>();
-        for (RecipeHolder<?> recipe : server.getRecipeManager().getRecipes()) {
-            if (more.size() < total && !recipe.value().isSpecial() && !free.contains(recipe.id()) && !player.getRecipeBook().contains(recipe.id())) {
-                more.add(recipe);
-            }
+    /** Gives the player the recipes of rules {@code from} to {@code to} (exclusive) and checks the count. */
+    private static void giveRules(GameTestHelper helper, ServerPlayer player, List<String> items, int from, int to) {
+        for (String item : items.subList(from, to)) {
+            UnlockManager.give(player, item);
         }
-        // One at a time: no recipe advancement of the game may add a second recipe on the way.
-        more.forEach(recipe -> {
-            if (earned.getAsInt() < total) {
-                player.awardRecipes(List.of(recipe));
-            }
-        });
-        check(helper, earned.getAsInt() == total, "the player should have earned " + total + " recipes, has " + earned.getAsInt());
+        check(helper, UnlockManager.rulesDone(player) == to, to + " rules should be done, are " + UnlockManager.rulesDone(player));
     }
 
     private static AdvancementHolder advancement(GameTestHelper helper, String name) {

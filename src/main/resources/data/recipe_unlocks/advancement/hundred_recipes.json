@@ -5,7 +5,7 @@
       "id": "minecraft:knowledge_book"
     },
     "title": "Мастер на все руки",
-    "description": "Открыть 100 рецептов",
+    "description": "Открыть рецепты по 100 заданиям",
     "frame": "challenge",
     "show_toast": true,
     "announce_to_chat": true,

@@ -274,13 +274,14 @@ public final class UnlockManager {
         UnlockIndex current = index(server);
         ProgressData data = ProgressData.get(server);
         ProgressData.PlayerProgress progress = data.peek(player.getUUID());
-        if (progress == null) {
-            return;
+        if (progress != null) {
+            releaseWithheld(player, current, progress, data);
+            for (UnlockIndex.Entry entry : current.entries()) {
+                tryUnlock(player, entry, progress, data);
+            }
         }
-        releaseWithheld(player, current, progress, data);
-        for (UnlockIndex.Entry entry : current.entries()) {
-            tryUnlock(player, entry, progress, data);
-        }
+        // New rules may already be done: their recipes were in the book before.
+        checkAchievements(player);
     }
 
     private static void tryUnlock(ServerPlayer player, UnlockIndex.Entry entry, ProgressData.PlayerProgress progress, ProgressData data) {
@@ -439,8 +440,8 @@ public final class UnlockManager {
         return recipes.size();
     }
 
-    /** A hidden advancement of this mod and how many recipes a player needs in the recipe book for it. */
-    private record Achievement(Identifier id, int recipes) {}
+    /** A hidden advancement of this mod and how many rules a player needs to have done for it. */
+    private record Achievement(Identifier id, int rules) {}
 
     /** In the order they are earned, so that they are also announced in that order. */
     private static final List<Achievement> ACHIEVEMENTS = List.of(
@@ -449,24 +450,33 @@ public final class UnlockManager {
             new Achievement(Identifier.fromNamespaceAndPath("recipe_unlocks", "hundred_recipes"), 100));
 
     /**
-     * Gives the advancements the player has earned by the number of recipes in their recipe book.
-     * Recipes the game hands to everybody on their first tick are not an achievement and do not count.
+     * How many rules of the config the player has done: all the rule's recipes are in their recipe
+     * book, however they got there. One rule counts once, whatever number of recipes it opens.
      */
-    public static void checkAchievements(ServerPlayer player, Set<ResourceKey<Recipe<?>>> known) {
+    public static int rulesDone(ServerPlayer player) {
+        int done = 0;
+        for (UnlockIndex.Entry entry : index(player.level().getServer()).entries()) {
+            if (entry.recipes().stream().allMatch(recipe -> player.getRecipeBook().contains(recipe.id()))) {
+                done++;
+            }
+        }
+        return done;
+    }
+
+    /** Gives the advancements the player has earned by the number of rules they have done. */
+    public static void checkAchievements(ServerPlayer player) {
         ModConfig current = config;
         // A player who is still logging in has no connection yet; the login event checks again.
-        if (known.isEmpty() || !current.active() || !current.achievements() || player instanceof FakePlayer || player.connection == null) {
+        if (!current.rulesActive() || !current.achievements() || player instanceof FakePlayer || player.connection == null) {
+            return;
+        }
+        int done = rulesDone(player);
+        if (done == 0) {
             return;
         }
         MinecraftServer server = player.level().getServer();
-        int earned = known.size();
-        for (ResourceKey<Recipe<?>> free : index(server).givenToEverybody()) {
-            if (known.contains(free)) {
-                earned--;
-            }
-        }
         for (Achievement achievement : ACHIEVEMENTS) {
-            AdvancementHolder advancement = earned >= achievement.recipes ? server.getAdvancements().get(achievement.id) : null;
+            AdvancementHolder advancement = done >= achievement.rules ? server.getAdvancements().get(achievement.id) : null;
             if (advancement != null) {
                 List<String> remaining = new ArrayList<>();
                 player.getAdvancements().getOrStartProgress(advancement).getRemainingCriteria().forEach(remaining::add);

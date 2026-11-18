@@ -4,7 +4,7 @@
       "id": "minecraft:crafting_table"
     },
     "title": "Первый рецепт",
-    "description": "Открыть свой первый рецепт",
+    "description": "Открыть рецепт по заданию сервера",
     "background": "minecraft:gui/advancements/backgrounds/stone",
     "frame": "task",
     "show_toast": true,

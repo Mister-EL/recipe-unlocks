@@ -1,7 +1,6 @@
 package io.github.misterel.recipeunlocks;
 
 import com.mojang.logging.LogUtils;
-import io.github.misterel.recipeunlocks.mixin.ServerRecipeBookAccessor;
 import io.github.misterel.recipeunlocks.unlock.PlaceTracker;
 import io.github.misterel.recipeunlocks.unlock.Trigger;
 import io.github.misterel.recipeunlocks.unlock.UnlockManager;
@@ -57,7 +56,6 @@ public final class GameEvents {
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             UnlockManager.evaluateAll(player);
-            UnlockManager.checkAchievements(player, ((ServerRecipeBookAccessor) player.getRecipeBook()).recipeUnlocks$known());
         }
     }
 
